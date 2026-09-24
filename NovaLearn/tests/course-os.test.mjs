@@ -49,6 +49,10 @@ await fs.writeFile(
 await compile("lib/novalearn/server.ts", "server.mjs", [
   ["'next/headers'", "'./cookies.mjs'"],
 ]);
+await compile("lib/novalearn/evidence-repository.ts", "evidence-repository.mjs", [
+  ["'./server'", "'./server.mjs'"],
+  ["'./course-domain'", "'./domain.mjs'"],
+]);
 await compile("app/api/course/route.ts", "route.mjs", [
   ["'next/server'", "'./response.mjs'"],
   ["'@/lib/novalearn/server'", "'./server.mjs'"],
@@ -58,6 +62,7 @@ await compile("app/api/course/route.ts", "route.mjs", [
   ["'@/lib/novalearn/learning-domain'", "'./learning.mjs'"],
   ["'@/lib/novalearn/course-compiler'", "'./compiler.mjs'"],
   ["'@/lib/novalearn/assessment-engine'", "'./assessment.mjs'"],
+  ["'@/lib/novalearn/evidence-repository'", "'./evidence-repository.mjs'"],
 ]);
 const mod = async (name) => import(pathToFileURL(path.join(temp, name)).href);
 const domain = await mod("domain.mjs"),
@@ -184,7 +189,7 @@ const user = "11111111-1111-4111-8111-111111111111",
   cid = "22222222-2222-4222-8222-222222222222",
   did = "33333333-3333-4333-8333-333333333333",
   classId = "44444444-4444-4444-8444-444444444444";
-let role, course, demo, requests, budget, ai, missing, conflict;
+let role, course, demo, requests, budget, ai, missing, conflict, persistenceFailure, evidenceRows, evidenceRuns, reviewRows;
 function reset() {
   role = "teacher";
   course = sampleCourse();
@@ -200,6 +205,7 @@ function reset() {
   ai = null;
   missing = false;
   conflict = false;
+  persistenceFailure=false;evidenceRows=[];evidenceRuns=[];reviewRows=[];
   Object.assign(process.env, {
     SUPABASE_URL: "https://test.supabase.co",
     SUPABASE_ANON_KEY: "test",
@@ -222,8 +228,40 @@ globalThis.fetch = async (url, options = {}) => {
       ? out({ choices: [{ message: { content: JSON.stringify(Array.isArray(ai)?ai.shift():ai) } }] })
       : out({ error: "unavailable" }, 503);
   if (u.includes("/classes")) return out([{ id: classId, teacher_id: user }]);
+  if(u.includes("/rpc/nova_save_evidence")){
+    if(persistenceFailure)return out({message:"Database request failed"},503);
+    const p=JSON.parse(options.body);
+    if(conflict||p.p_version!==demo.version)return out({message:"This record changed in another session. Reload before saving."},409);
+    evidenceRuns.push({id:p.p_bundle.id,demonstration_id:did,bundle:p.p_bundle,artifact_snapshot:structuredClone(p.p_data.evidence),created_at:new Date().toISOString()});
+    evidenceRows.push(...p.p_events.map(e=>({id:e.id,run_id:p.p_bundle.id,demonstration_id:did,course_id:cid,student_id:user,
+      module_id:e.moduleId,chapter_ids:e.chapterIds,topic_ids:e.topicIds,concept_ids:e.conceptIds,objective_id:e.objectiveId,
+      assessment_id:e.assessmentId,assessment_item_id:e.assessmentItemId,target_id:e.targetId,evidence_type:e.type,
+      status:e.status,strength:e.strength,confidence:e.confidence,claim:e.claim,expected:e.expected,criterion:e.criterion,
+      supports:e.supports,misconception:e.misconception,attempt_number:e.attemptNumber,variant_id:e.variantId,
+      scaffolding:e.scaffolding,evaluator:e.evaluator,routing:e.routing,prompt_version:e.promptVersion,observed_at:e.at})));
+    demo={...demo,data:p.p_data,status:"submitted",version:demo.version+1};return out([demo]);
+  }
+  if(u.includes("/rpc/nova_record_evidence_review")){
+    if(persistenceFailure)return out({message:"Database request failed"},503);
+    const p=JSON.parse(options.body);
+    if(conflict||p.p_version!==demo.version)return out({message:"This record changed in another session. Reload before saving."},409);
+    reviewRows.push({demonstration_id:did,run_id:p.p_data.evidenceBundle?.id||null,course_id:cid,student_id:user,
+      reviewer_id:p.p_review.reviewerId,decision:p.p_review.decision,note:p.p_review.note,
+      reviewed_findings:p.p_review.findings,previous_findings:demo.data.evaluation?.findings,created_at:p.p_review.at});
+    demo={...demo,data:p.p_data,status:p.p_status,version:demo.version+1};return out([demo]);
+  }
+  if(u.includes("/nova_evidence_events")){
+    let rows=evidenceRows;
+    if(u.includes("student_id=eq."))rows=rows.filter(x=>x.student_id===new URL(u).searchParams.get("student_id")?.slice(3));
+    if(u.includes("objective_id=eq."))rows=rows.filter(x=>x.objective_id===new URL(u).searchParams.get("objective_id")?.slice(3));
+    if(u.includes("concept_ids=cs."))rows=rows.filter(x=>x.concept_ids.includes(new URL(u).searchParams.get("concept_ids")?.slice(4,-1)));
+    return out(rows);
+  }
+  if(u.includes("/nova_evidence_runs"))return out(evidenceRuns);
+  if(u.includes("/nova_evidence_reviews"))return out(reviewRows);
   if (u.includes("/nova_courses") || u.includes("/nova_publications")) {
     if (missing) return out([]);
+    if(u.includes("teacher_id=eq.")&&course.teacher_id!==user)return out([]);
     if (options.method === "PATCH")
       return out(conflict ? [] : [{ ...course, ...JSON.parse(options.body) }]);
     if (options.method === "POST")
@@ -231,10 +269,14 @@ globalThis.fetch = async (url, options = {}) => {
     return out([course]);
   }
   if (u.includes("/nova_demonstrations")) {
-    if (options.method === "PATCH")
-      return out(conflict ? [] : [{ ...demo, ...JSON.parse(options.body) }]);
+    if (options.method === "PATCH"){
+      if(conflict)return out([]);
+      demo={...demo,...JSON.parse(options.body)};return out([demo]);
+    }
     if (options.method === "POST")
       return out([{ id: did, ...JSON.parse(options.body) }]);
+    if(role==="student"&&demo.student_id!==user)return out([]);
+    if(role==="teacher"&&course.teacher_id!==user)return out([]);
     return out([demo]);
   }
   return out([]);
@@ -249,6 +291,11 @@ const post = (body, origin = "http://localhost:3000") =>
   );
 const assessmentEngine=await mod("assessment.mjs");
 const studentEvidence=await mod("student-evidence.mjs");
+const evidenceRepository=await mod("evidence-repository.mjs");
+function supportedEvidence(){
+  const targets=studentEvidence.evidenceTargets(demo).filter(t=>demo.data.evidence.some(e=>t.kinds.includes(e.kind)&&e.objectiveIds.includes(t.objectiveId)&&e.answer.trim()));
+  ai={observations:targets.map(t=>{const e=demo.data.evidence.find(e=>t.kinds.includes(e.kind)&&e.objectiveIds.includes(t.objectiveId)&&e.answer.trim()),quote=e.answer.slice(0,35);return {targetId:t.id,status:"SUPPORTED",strength:"STRONG",confidence:"HIGH",claim:"The student supplied a relevant explanation for professor review.",supports:[{evidenceId:e.id,start:0,end:quote.length,quote}]};})};
+}
 function seedAssessment(){const inputs={moduleId:course.data.modules[0].id,objectiveIds:course.data.modules[0].objectiveIds,category:"Assignment",format:"Case study",emphasis:"Apply concepts and justify decisions using evidence.",duration:60,difficulty:"Core",verification:"Standard",aiPolicy:"Planning only; disclose use",collaboration:"Individual",resources:"Approved notes",knowledgeQuestions:1};course.data.assessmentDesigns=[assessmentEngine.createAssessmentDesign(course.data,inputs,"design-test","cp-test")];}
 test("student cannot run assessment design stages",async()=>{reset();role="student";const r=await post({action:"assessment-create",courseId:cid,version:course.version});assert.equal(r.status,403);assert.ok(!requests.some(r=>r.url.includes("/chat/completions")));});
 test("stale assessment stages do not spend model budget",async()=>{reset();seedAssessment();const r=await post({action:"assessment-step",courseId:cid,version:-1,designId:"design-test",key:"evidence"});assert.equal(r.status,409);assert.ok(!requests.some(r=>r.url.includes("consume_ai_budget")));});
@@ -368,11 +415,116 @@ test("model outage still delivers complete evidence to the professor", async () 
 });
 test("student submission persists exact passages and professor override history without mastery mutation",async()=>{
   reset();role="student";demo.status="followup";
-  const targets=studentEvidence.evidenceTargets(demo).filter(t=>demo.data.evidence.some(e=>t.kinds.includes(e.kind)&&e.objectiveIds.includes(t.objectiveId)&&e.answer.trim()));
-  ai={observations:targets.map(t=>{const e=demo.data.evidence.find(e=>t.kinds.includes(e.kind)&&e.objectiveIds.includes(t.objectiveId)&&e.answer.trim()),quote=e.answer.slice(0,35);return {targetId:t.id,status:"SUPPORTED",strength:"STRONG",confidence:"HIGH",claim:"The student supplied a relevant explanation for professor review.",supports:[{evidenceId:e.id,start:0,end:quote.length,quote}]};})};
+  supportedEvidence();
   let r=await post({action:"submit",id:did,version:demo.version});assert.equal(r.status,200);const submitted=await r.json();assert.equal(submitted.data.evidenceBundle.status,"evaluated");assert.ok(submitted.data.evidenceEvents.some(e=>e.status==="SUPPORTED"));assert.ok(submitted.data.evidenceEvents.every(e=>e.supports.every(s=>submitted.data.evidence.find(x=>x.id===s.evidenceId).answer.slice(s.start,s.end)===s.quote)));assert.ok(!requests.some(x=>x.url.includes("nova_learning_records")));
-  demo={...submitted};role="teacher";const findings=structuredClone(submitted.data.evaluation.findings);
-  r=await post({action:"review",id:did,version:demo.version,review:{decision:"override",note:"I reviewed the original responses and revised the evidence interpretation.",findings}});assert.equal(r.status,200);const reviewed=await r.json();assert.equal(reviewed.status,"reviewed");assert.equal(reviewed.data.reviewHistory.length,1);assert.equal(reviewed.data.reviewHistory[0].reviewerId,user);assert.deepEqual(reviewed.data.evidenceEvents,submitted.data.evidenceEvents);
+  role="teacher";const findings=structuredClone(submitted.data.evaluation.findings);
+  r=await post({action:"review",id:did,version:demo.version,review:{decision:"override",note:"I reviewed the original responses and revised the evidence interpretation.",findings}});assert.equal(r.status,200);const reviewed=await r.json();assert.equal(reviewed.status,"reviewed");assert.equal(reviewed.data.reviewHistory.length,1);assert.equal(reviewed.data.reviewHistory[0].reviewerId,user);assert.deepEqual(reviewed.data.evidenceEvents.map(e=>e.id),submitted.data.evidenceEvents.map(e=>e.id));assert.ok(reviewed.data.evidenceEvents.some(e=>e.criterion));
+});
+test("submission atomically stores independent rows and frozen artifact references",async()=>{
+  reset();role="student";demo.status="followup";supportedEvidence();
+  const before=structuredClone(demo.data.evidence),r=await post({action:"submit",id:did,version:demo.version});
+  assert.equal(r.status,200);const submitted=await r.json();
+  assert.equal(evidenceRuns.length,1);assert.equal(evidenceRows.length,submitted.data.evidenceBundle.eventIds.length);
+  assert.ok(evidenceRows.some(e=>e.evidence_type==="SOCRATIC_RESPONSE"&&e.supports.length));
+  assert.equal(demo.data.evidenceEvents,undefined);assert.equal(demo.data.evidenceStoreVersion,1);
+  assert.deepEqual(evidenceRuns[0].artifact_snapshot,before);
+  for(const e of evidenceRows)for(const s of e.supports){const a=evidenceRuns[0].artifact_snapshot.find(a=>a.id===s.evidenceId);assert.equal(a.answer.slice(s.start,s.end),s.quote);}
+  const refreshed=await route.GET();assert.equal(refreshed.status,200);
+  const loaded=(await refreshed.json()).demonstrations[0];assert.equal(loaded.data.evidenceEvents.length,evidenceRows.length);
+  assert.ok(loaded.data.evidenceEvents.every(e=>e.criterion===""));
+  role="teacher";const professor=(await(await route.GET()).json()).demonstrations[0];
+  assert.equal(professor.data.evidenceArchive.length,1);assert.deepEqual(professor.data.evidenceArchive[0].artifacts,before);
+  assert.ok(professor.data.evidenceEvents.some(e=>e.criterion));
+});
+test("persistence outage never reports a submission or adds negative evidence",async()=>{
+  reset();role="student";demo.status="followup";persistenceFailure=true;
+  const r=await post({action:"submit",id:did,version:demo.version});assert.equal(r.status,503);
+  assert.match((await r.json()).error,/persistence unavailable/);assert.equal(demo.status,"followup");
+  assert.equal(evidenceRows.length,0);assert.equal(evidenceRuns.length,0);
+});
+test("stale retry cannot duplicate an evidence run or overwrite the original",async()=>{
+  reset();role="student";demo.status="followup";const original=structuredClone(demo);
+  assert.equal((await post({action:"submit",id:did,version:demo.version})).status,200);
+  const first=structuredClone(evidenceRows);
+  await assert.rejects(()=>evidenceRepository.appendEvidence(original,first,original.data.evidenceBundle||{id:"retry"}),/another session/);
+  assert.deepEqual(evidenceRows,first);assert.equal(evidenceRuns.length,1);
+});
+test("review RPC retains original machine observations and prior interpretation",async()=>{
+  reset();role="student";demo.status="followup";supportedEvidence();
+  assert.equal((await post({action:"submit",id:did,version:demo.version})).status,200);
+  const original=structuredClone(evidenceRows);role="teacher";
+  const findings=structuredClone(demo.data.evaluation.findings);findings[0].level="Needs verification";
+  const r=await post({action:"review",id:did,version:demo.version,review:{decision:"override",note:"I reviewed the explanation and require further verification.",findings}});
+  assert.equal(r.status,200);assert.deepEqual(evidenceRows,original);assert.equal(reviewRows.length,1);
+  assert.notDeepEqual(reviewRows[0].previous_findings,reviewRows[0].reviewed_findings);
+  assert.equal((await r.json()).data.reviewHistory[0].reviewerId,user);
+  const history=await evidenceRepository.getEvidenceHistory({studentId:user,courseId:cid});
+  assert.ok(history.some(h=>h.reviews.some(v=>v.previous_findings&&v.reviewed_findings)));
+});
+test("failed professor review does not erase the machine record or claim a decision",async()=>{
+  reset();persistenceFailure=true;
+  const r=await post({action:"review",id:did,version:demo.version,review:{decision:"override",note:"I would adjust this interpretation after reading the work.",findings:demo.data.evaluation.findings}});
+  assert.equal(r.status,503);assert.equal(reviewRows.length,0);assert.equal(demo.status,"submitted");
+});
+test("revision leaves earlier run and raw student work immutable",async()=>{
+  reset();role="student";demo.status="followup";
+  assert.equal((await post({action:"submit",id:did,version:demo.version})).status,200);
+  const first=structuredClone(evidenceRows),artifact=structuredClone(evidenceRuns[0].artifact_snapshot);
+  role="teacher";let r=await post({action:"review",id:did,version:demo.version,review:{decision:"request_revision",note:"Please revise your explanation and defend the changed scenario.",findings:demo.data.evaluation?.findings||demo.snapshot.objectives.map(o=>({objectiveId:o.id,level:"Needs verification",confidence:"Low",rationale:"More evidence needed",evidenceIds:[],uncertainty:"Review pending"}))}});assert.equal(r.status,200);
+  role="student";r=await post({action:"evidence",id:did,version:demo.version,artifact:"Revised artifact with stronger source checks and a grounded retrieval plan.",explanation:"I now distinguish failed retrieval from generation by testing the same answer against supplied relevant passages.",transfer:"I would test the new context against a held out reference set and justify the change.",followupAnswers:{},disclosure:"No tools",helpUsed:"None"});assert.equal(r.status,200);
+  assert.equal(demo.data.evidenceBundle,undefined);
+  ai={questions:[{id:"one",prompt:"Which passage makes this diagnosis credible?",objectiveIds:[demo.snapshot.checkpoint.objectiveIds[0]]},{id:"two",prompt:"Which alternate explanation did you rule out?",objectiveIds:[demo.snapshot.checkpoint.objectiveIds[1]]}]};
+  r=await post({action:"followups",id:did,version:demo.version});assert.equal(r.status,200);
+  r=await post({action:"evidence",id:did,version:demo.version,artifact:"Revised artifact with stronger source checks and a grounded retrieval plan.",explanation:"I now distinguish failed retrieval from generation by testing the same answer against supplied relevant passages.",transfer:"I would test the new context against a held out reference set and justify the change.",followupAnswers:{q0:"The selected approved passage explicitly supports my diagnosis.",q1:"I ruled out generation by controlling the input passages."},disclosure:"No tools",helpUsed:"None"});assert.equal(r.status,200);
+  r=await post({action:"submit",id:did,version:demo.version});assert.equal(r.status,200);
+  assert.equal(evidenceRuns.length,2);assert.deepEqual(evidenceRuns[0].artifact_snapshot,artifact);
+  assert.deepEqual(evidenceRows.slice(0,first.length),first);assert.ok(evidenceRows.length>first.length);
+});
+test("history API is scoped, queryable, and does not parse demonstration JSON",async()=>{
+  reset();role="student";demo.status="followup";
+  assert.equal((await post({action:"submit",id:did,version:demo.version})).status,200);
+  const callsBefore=requests.length;const objectiveId=evidenceRows[0].objective_id;
+  role="teacher";const history=await evidenceRepository.getEvidenceHistory({studentId:user,courseId:cid,objectiveId});
+  assert.ok(history.length);assert.ok(history.every(x=>x.event.objectiveId===objectiveId));
+  assert.ok(!requests.slice(callsBefore).some(x=>x.url.includes("/nova_demonstrations")));
+  role="student";const own=await evidenceRepository.getEvidenceHistory({studentId:user,courseId:cid});assert.ok(own.every(x=>x.event.criterion===""));
+  await assert.rejects(()=>evidenceRepository.getEvidenceHistory({studentId:"55555555-5555-4555-8555-555555555555",courseId:cid}),/not permitted/);
+  role="teacher";
+  course.teacher_id="different-teacher";
+  await assert.rejects(()=>evidenceRepository.getEvidenceHistory({studentId:user,courseId:cid}),/not permitted/);
+});
+test("token-scoped GET does not hydrate another student or professor's evidence",async()=>{
+  reset();role="student";demo.student_id="another-student";
+  let r=await route.GET();assert.equal(r.status,200);assert.equal((await r.json()).demonstrations.length,0);
+  assert.ok(!requests.some(x=>x.url.includes("/nova_evidence_events")));
+  reset();role="teacher";course.teacher_id="another-professor";
+  r=await route.GET();assert.equal(r.status,200);assert.equal((await r.json()).demonstrations.length,0);
+  assert.ok(!requests.some(x=>x.url.includes("/nova_evidence_events")));
+});
+test("legacy JSONB evidence and review remain visible without normalized rows",async()=>{
+  reset();demo.data.evidenceEvents=[{id:"legacy",claim:"Legacy work",supports:[],status:"AMBIGUOUS",strength:"INSUFFICIENT",confidence:"LOW"}];
+  demo.data.reviewHistory=[{decision:"override",note:"Historical decision",findings:[],at:"2026-09-20T10:00:00Z"}];
+  const r=await route.GET();assert.equal(r.status,200);const saved=(await r.json()).demonstrations[0];
+  assert.equal(saved.data.evidenceEvents[0].id,"legacy");assert.equal(saved.data.reviewHistory[0].note,"Historical decision");
+});
+test("legacy JSONB observations coexist with newly normalized attempts",async()=>{
+  reset();role="student";demo.status="followup";
+  demo.data.evidenceEvents=[{id:"legacy",claim:"Historical observation",supports:[],status:"AMBIGUOUS",strength:"INSUFFICIENT",confidence:"LOW",expected:"",criterion:""}];
+  assert.equal((await post({action:"submit",id:did,version:demo.version})).status,200);
+  assert.equal(demo.data.evidenceEvents.length,1);assert.equal(evidenceRows.some(e=>e.id==="legacy"),false);
+  const loaded=(await(await route.GET()).json()).demonstrations[0];
+  assert.ok(loaded.data.evidenceEvents.some(e=>e.id==="legacy"));
+  assert.ok(loaded.data.evidenceEvents.some(e=>e.id!=="legacy"));
+});
+test("migration keeps evidence private and makes writes atomic and version checked",async()=>{
+  const sql=await fs.readFile("supabase/004-evidence-history.sql","utf8");
+  for(const table of ["nova_evidence_runs","nova_evidence_events","nova_evidence_reviews"]){
+    assert.match(sql,new RegExp(`create table if not exists public\\.${table}`));
+    assert.match(sql,new RegExp(`alter table public\\.${table} enable row level security`));
+  }
+  assert.match(sql,/revoke all on public\.nova_evidence_runs,public\.nova_evidence_events,public\.nova_evidence_reviews from public,anon,authenticated/);
+  assert.match(sql,/security invoker/);assert.match(sql,/for update/);assert.match(sql,/d\.version<>p_version/);
+  assert.match(sql,/grant execute on function public\.nova_save_evidence[^\n]* to service_role/);
 });
 test("student cannot evaluate another student's submission",async()=>{reset();role="student";demo.student_id="another-student";demo.status="followup";const r=await post({action:"submit",id:did,version:demo.version});assert.equal(r.status,403);assert.ok(!requests.some(x=>x.url.includes("/chat/completions")));});
 test("review normalizes unsupported findings and archives revision evidence", async () => {

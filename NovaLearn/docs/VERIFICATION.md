@@ -46,7 +46,7 @@ These are meaningful implementation checks, not evidence that a real institution
 
 ## Live acceptance checks after adding credentials
 
-1. New database: run `schema.sql`, then `002-course-os.sql`, then `003-adaptive-learning.sql`. Existing NovaLearn database: run only unapplied additive migrations, in order.
+1. New database: run `schema.sql`, then `002-course-os.sql`, `003-adaptive-learning.sql`, and `004-evidence-history.sql`. Existing NovaLearn database: run only unapplied additive migrations in order before starting the new API.
 2. Create Professor A, Professor B, and a Student in separate browser profiles. Verify confirmation, login, recovery, and logout.
 3. A creates a class/course. Student joins by code. B must not read or mutate A's drafts, sources, publications, students, or evidence. Anonymous users must not read them.
 4. Save an unapproved source/material/checkpoint. Student must not see them. Approve and release; verify only the approved snapshot appears.
@@ -56,7 +56,7 @@ These are meaningful implementation checks, not evidence that a real institution
 8. If using embeddings, index saved sources, release, and verify retrieval with the configured model. Reindex when changing models.
 9. Student starts a checkpoint; professor changes the blueprint. Confirm the student's started bundle retains its frozen original objectives/rubric.
 10. Save/resume student work across login sessions. Submit all four evidence kinds. Confirm a model outage still submits original evidence with no invented findings.
-11. Professor confirms or overrides findings; Student sees the feedback. Request a revision, update work, regenerate follow-ups when needed, and resubmit. Verify the previous requested-revision snapshot remains in the exported bundle.
+11. Professor confirms or overrides findings; Student sees the feedback. Request a revision, update work, regenerate follow-ups when needed, and resubmit. Verify two immutable evidence runs/artifact snapshots and separate review records exist; a retry creates no duplicate rows. Verify direct browser reads/writes of private evidence tables fail, while authorized course API views work. Historical JSONB-only records remain readable.
 12. Confirm Class Insights uses professor-reviewed findings in preference to AI suggestions and labels remaining suggestions as provisional. Missing evidence must not imply dishonesty.
 13. Test voice recording/transcription/playback on localhost or HTTPS with microphone permission. Deny permission and confirm text remains available. Practice chat must not enter assessed evidence automatically.
 14. Check responsive layout, keyboard navigation, 200% text enlargement, actual email delivery, provider billing controls, and your institution's data-retention/access policies before inviting real students.

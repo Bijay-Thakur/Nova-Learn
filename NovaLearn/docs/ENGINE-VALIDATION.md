@@ -1,12 +1,12 @@
 # Connected-engine validation
 
-The connected-engine baseline was published as `b866487`. The subsequent Student Evidence Engine is a local, uncommitted patch; no GitHub commit, push, pull request, database migration or deployment was performed for this evidence-engine task. No browser automation runtime was available.
+The Student Evidence Engine was published as `72117dc`. This evidence-history migration is a separate local, uncommitted patch. No GitHub commit, push, pull request, live database migration or deployment was performed for this task. Browser automation and a local PostgreSQL instance were unavailable.
 
 ## Results
 
 | Check | Result |
 |---|---|
-| `npm test` | Pass: 149 tests across seven suites, including student evidence, authenticated API, Socratic linkage and existing engine coverage. |
+| `npm test` | Pass: 160 tests across seven suites, including atomic evidence persistence, legacy reads, review history and existing engine coverage. |
 | `npm run typecheck` | Pass. |
 | `npm run build:local` | Pass: Next.js compiled the page and all five API routes. |
 | `npm run build` | Pass: bounded Vinext build; fixed the inherited non-executable shell-wrapper invocation by invoking the helper with Bash. Vinext warns about existing large chunks and its route-classification limitation. |
@@ -18,7 +18,7 @@ The `npm test` suite exercises professor graph approval, citation and private-so
 
 ## Not claimed as verified
 
-- No live credentialed Supabase database, RLS multi-tenant account test, or AI/voice provider call was available for this local acceptance run. The authenticated API tests use mocked transport; the new optional course fields use the existing JSONB aggregate and require no SQL migration.
+- No live credentialed Supabase database, executable PostgreSQL migration test, RLS multi-tenant account test, or AI/voice provider call was available for this local acceptance run. The authenticated API tests use mocked transport. Apply `004-evidence-history.sql` before running the new live API; it preserves older JSONB records without fabricating historical provenance.
 - No browser visual automation was available. The app compiled and served, but new editor interactions should be checked by a professor/student pilot in Chrome/Firefox before institutional use.
 - Lexical source matching, deterministic grounding checks and model critique are not a substitute for disciplinary or accessibility review. Automated research is intentionally disabled; proposed bounded questions await professor judgment and approved sources.
 - Existing lint debt remains separate cleanup work. `npm test` does not include the five build-artifact UI tests; run `npm run build && npm run test:ui` to check them.

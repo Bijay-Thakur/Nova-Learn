@@ -27,6 +27,7 @@ import { deriveChapters, generateChapter, approveChapter, refreshChapterOutline 
 import { reconcileContent } from "@/lib/novalearn/content-integrity";
 import { advanceDialogue } from "@/lib/novalearn/socratic";
 import { evidenceLinks, evidenceTargets, evaluateStudentEvidence } from "@/lib/novalearn/student-evidence";
+import { appendEvidence, hydrateEvidence, recordProfessorReview } from "@/lib/novalearn/evidence-repository";
 import { createAssessmentDesign, runAssessmentStage, nextAssessmentStage, resetAssessmentFrom, assessmentStages, approveAssessment, validateAuthenticPublication, reconcileAssessmentEdits, assessmentContextFingerprint, assignAssessmentVariant } from "@/lib/novalearn/assessment-engine";
 import { runCompilerJob, compilerIssues, nextCompilerJob, reviewFingerprint } from "@/lib/novalearn/course-compiler";
 import { validateLearning, isReleased, learningConfig, activitySchema } from "@/lib/novalearn/learning-domain";
@@ -83,7 +84,9 @@ function failure(e: unknown) {
           ? 403
           : message.includes("another session")
             ? 409
-            : 400,
+        : message.includes("persistence unavailable") || message.includes("Evidence records are temporarily unavailable")
+          ? 503
+          : 400,
     },
   );
 }
@@ -102,7 +105,7 @@ export async function GET() {
     );
     return NextResponse.json({
       courses,
-      demonstrations,
+      demonstrations:await hydrateEvidence(demonstrations,profile.role==="teacher"),
       routing: routingSummary(),
     });
   } catch (e) {
@@ -581,29 +584,23 @@ export async function POST(req: Request) {
       canSubmit(d);
       let notice = "";
       d.data.evidenceBundle=undefined;
-      try {
-        let releasedData;
-        if(d.snapshot.checkpoint.authentic&&d.snapshot.publicationVersion){
-          const [release]=await sb(`/rest/v1/nova_course_versions?course_id=eq.${d.course_id}&version=eq.${d.snapshot.publicationVersion}&select=snapshot`,{},undefined,true);
-          releasedData=release?.snapshot?.data;
-        }
-        const result=await evaluateStudentEvidence(d,releasedData,async(tier,system,input)=>{await budget();return generate(tier,system,input,b.provider);});
-        d.data.evidenceEvents=[...(d.data.evidenceEvents||[]),...result.events];
-        d.data.evidenceBundle=result.bundle;
-        d.data.evaluation=result.evaluation;
-        notice=result.bundle.notice||"";
-      } catch {
-        d.data.evaluation = null;
-        notice =
-          "Your evidence was submitted. Automated synthesis is unavailable; your professor can review the original evidence.";
+      let releasedData;
+      if(d.snapshot.checkpoint.authentic&&d.snapshot.publicationVersion){
+        const [release]=await sb(`/rest/v1/nova_course_versions?course_id=eq.${d.course_id}&version=eq.${d.snapshot.publicationVersion}&select=snapshot`,{},undefined,true);
+        releasedData=release?.snapshot?.data;
       }
+      const result=await evaluateStudentEvidence(d,releasedData,async(tier,system,input)=>{await budget();return generate(tier,system,input,b.provider);});
+      d.data.evidenceBundle=result.bundle;
+      d.data.evaluation=result.evaluation;
+      d.data.evidenceStoreVersion=1;
+      notice=result.bundle.notice||"";
       d.status = "submitted";
       d.data.review = null;
       d.data.events.push({
         at: now(),
         action: notice || "Evidence submitted with provisional AI synthesis",
       });
-      const saved = await saveDemo(d);
+      const saved = await appendEvidence(d,result.events,result.bundle);
       return NextResponse.json({ ...saved, notice });
     }
     if (action === "review") {
@@ -652,7 +649,6 @@ export async function POST(req: Request) {
           },
         ];
       d.data.review = { ...review, at: now(),reviewerId:profile.id };
-      d.data.reviewHistory=[...(d.data.reviewHistory||[]),d.data.review];
       d.status =
         review.decision === "request_revision"
           ? "revision_requested"
@@ -661,7 +657,8 @@ export async function POST(req: Request) {
         at: now(),
         action: `Professor ${review.decision}: ${review.note.slice(0, 500)}`,
       });
-      return NextResponse.json(await saveDemo(d));
+      const saved=await recordProfessorReview(d,d.data.review);
+      return NextResponse.json((await hydrateEvidence([saved],true))[0]);
     }
     if (action === "chat") {
       const c = await course(!teacher);

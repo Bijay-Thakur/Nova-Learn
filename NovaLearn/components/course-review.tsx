@@ -514,6 +514,7 @@ export function EvidenceReview() {
           <Panel>
             <h3>Evidence trail</h3>
             {!!d.data.reviewHistory?.length&&<details><summary>Professor decision history · {d.data.reviewHistory.length}</summary>{d.data.reviewHistory.map((review,i)=><div className="course-trail" key={`${review.at}-${i}`}><span/><div><b>{review.decision.replaceAll("_"," ")}</b><p>{review.note}</p><small>{new Date(review.at).toLocaleString()} · {review.findings.map(f=>`${f.objectiveId}: ${f.level}`).join("; ")}</small></div></div>)}</details>}
+            {!!d.data.evidenceArchive?.length&&<details><summary>Saved student work · {d.data.evidenceArchive.length} attempt(s)</summary>{d.data.evidenceArchive.map(run=><details key={run.runId}><summary>{new Date(run.at).toLocaleString()} · {run.bundle.status.replaceAll("_"," ")}</summary>{run.artifacts.map(a=><div className="course-trail" key={`${run.runId}-${a.id}`}><span/><div><b>{a.kind} · {a.id}</b><p className="fine">{a.prompt}</p><p>{a.answer}</p></div></div>)}</details>)}</details>}
             {d.data.dialogue&&<details><summary>Socratic defense · {d.data.dialogue.mode} · {d.data.dialogue.status}</summary><p>{d.data.dialogue.reason}</p>{d.data.dialogue.turns.map(t=><p key={t.questionId}><b>{t.questionId}</b>: {t.uncertainty}</p>)}<p className="fine">Probe reasons are suggestions, not established misconceptions or grades. Review the student’s actual responses above.</p></details>}
             {d.data.events.map((e, i) => (
               <div className="course-trail" key={i}>

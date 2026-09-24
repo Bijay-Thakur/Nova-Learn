@@ -210,7 +210,7 @@ export type EvidenceItem = {
 };
 export type EvidenceSupport = { evidenceId: string; quote: string; start: number; end: number };
 export type EvidenceEvent = {
-  id: string; submissionId: string; studentId: string; courseId: string;
+  id: string; runId?: string; submissionId: string; studentId: string; courseId: string;
   assessmentId: string; assessmentItemId: string; targetId: string;
   moduleId: string; chapterIds: string[]; topicIds: string[]; conceptIds: string[];
   objectiveId: string; expected: string; criterion: string;
@@ -271,9 +271,11 @@ export type Demonstration = {
     evidenceLinks?: { objectiveId:string; moduleId:string; chapterIds:string[]; topicIds:string[]; conceptIds:string[] }[];
   };
   data: {
+    evidenceStoreVersion?: 1;
     dialogue?: { status:"active"|"complete"; maxProbes:number; reason:string; mode:"live"|"demo"; turns:{questionId:string; uncertainty:string; evidenceIds?:string[]; objectiveIds?:string[]; targetIds?:string[]; at:string}[] };
     evidenceEvents?: EvidenceEvent[];
     evidenceBundle?: EvidenceBundle;
+    evidenceArchive?: { runId:string; at:string; bundle:EvidenceBundle; artifacts:EvidenceItem[] }[];
     revisions?: {
       at: string;
       evidence: EvidenceItem[];

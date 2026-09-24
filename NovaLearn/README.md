@@ -12,7 +12,7 @@ The Authentic Assessment Engine adds a saved design pipeline: objective evidence
 
 The connected-engine patch adds structured chapter/topic/content blocks, professor approval before downstream generation, a source-coverage/gap report, approved learning content in assessment context, and a bounded stateful Socratic defense. Existing materials and published versions stay usable. See **[Connected engines guide](docs/CONNECTED-ENGINES.md)**, **[Audit matrix](docs/ENGINE-AUDIT.md)** and **[validation results](docs/ENGINE-VALIDATION.md)** for real/demo boundaries and verification results. No additional database migration is required.
 
-The Student Evidence Engine stores objective-linked observations with exact student-response spans, separate evidence-strength and interpretation-confidence labels, uncertainty and optional grounded misconceptions. It uses the existing assessment targets, bounded Socratic dialogue, professor Evidence Review and demonstration JSONB record. The preview is explicitly scripted; provider failures leave the original student work available for professor review. Code-test signals are accepted only from server-produced results; NovaLearn does not yet run submitted code in a sandbox. Evidence observations do not directly change mastery.
+The Student Evidence Engine stores objective-linked observations with exact student-response spans, separate evidence-strength and interpretation-confidence labels, uncertainty and optional grounded misconceptions. Live submissions now write immutable evidence events, a run with the original student artifacts, and separate professor decisions through atomic database functions. Older demonstration JSONB evidence remains readable; the preview is explicitly scripted. Provider failures preserve the original work. Code-test signals require server-produced results; NovaLearn does not yet run submitted code in a sandbox. Evidence observations do not directly change mastery.
 
 ## Explore immediately
 
@@ -47,15 +47,15 @@ For a **new** Supabase project:
 
 1. Run `supabase/schema.sql` once in its SQL editor, before registering users.
 2. Run `supabase/002-course-os.sql` after it to add courses, publications, and evidence bundles.
-   Then run `supabase/003-adaptive-learning.sql` to add versioned releases and adaptive-learning records. All three are required for a fresh installation.
+   Then run `supabase/003-adaptive-learning.sql` to add versioned releases and adaptive-learning records, followed by `supabase/004-evidence-history.sql` for atomic evidence history. Apply all four in order before starting the current live app.
 3. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and server-only `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`.
 4. Enable email/password auth. Set the Auth Site URL and allowed redirect URL to `http://localhost:3000` locally, or your deployed HTTPS origin.
 5. Create professor and student accounts with different emails. The database role remains `teacher`; the course workspace calls it Professor. Confirm emails when enabled.
 6. Choose **Use live accounts** to exit sample preview.
 
-For an **existing NovaLearn database**, run whichever additive migrations (`002-course-os.sql`, then `003-adaptive-learning.sql`) have not yet been applied. Do not rerun the original non-idempotent `schema.sql`. Existing data is preserved. Release each existing course again to create its first immutable answer-key snapshot.
+For an **existing NovaLearn database**, run any unapplied additive migrations in order, including `004-evidence-history.sql` before starting this version of the live API. Do not rerun the original non-idempotent `schema.sql`. Existing demonstration JSONB data is preserved and remains readable without fabricating a backfill. Release each existing course again if it lacks an immutable answer-key snapshot.
 
-Draft courses are readable only by their professor. Published snapshots are readable by the professor and enrolled students. Students read their own evidence; the course professor can read submitted evidence. New-table browser writes are denied; the authenticated API checks roles/ownership and uses the service role for writes. Keep that key private. Test live policies using `docs/VERIFICATION.md` before real student use.
+Draft courses are readable only by their professor. Published snapshots are readable by the professor and enrolled students. Students read their own evidence; the course professor can read submitted evidence. The new evidence-history tables deny all direct browser access, including private evaluator details; the authenticated API checks roles/ownership and uses server-only service-role reads and atomic writes. Keep that key private. Test live policies using `docs/VERIFICATION.md` before real student use.
 
 Faculty verification, institution SSO, organization administration, and LMS integrations are not included. A self-registered professor does not gain access to another professor’s classes.
 
@@ -149,7 +149,7 @@ npm test              # Existing and student-evidence engine tests
 - `components/course-review.tsx`: professor home, review, and insights.
 - `lib/novalearn/course-domain.ts`: graph/rubric/evidence validation and aggregation.
 - `lib/novalearn/course-ai.ts`: task routing, embeddings, grounded context.
-- `lib/novalearn/evidence.ts`: canonical evidence assembly.
+- `lib/novalearn/evidence.ts`: canonical evidence assembly; `evidence-repository.ts`: atomic persistence, scoped evidence history, and legacy read compatibility.
 - `app/api/course/route.ts`: authenticated course/publication/evidence operations.
 - `supabase/002-course-os.sql`: additive data model and read policies.
 - `tests/course-os.test.mjs`: domain and route tests with mocked transport.
@@ -159,6 +159,7 @@ npm test              # Existing and student-evidence engine tests
 - `components/learning-*.tsx`, `adaptive-student.tsx`, `concept-insights.tsx`: blueprint controls, quick checks, mastery map, and support desk.
 - `components/nova-avatar.tsx`: lazy-loaded Three.js character with safe fallback and motion controls.
 - `supabase/003-adaptive-learning.sql`: learning records, immutable release snapshots, and atomic publication.
+- `supabase/004-evidence-history.sql`: immutable evidence runs/events, professor review records, RLS-denied browser access, and atomic submission/review functions.
 
 ## Readiness and troubleshooting
 

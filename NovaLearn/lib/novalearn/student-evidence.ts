@@ -95,6 +95,17 @@ export async function evaluateStudentEvidence(d:Demonstration,data?:CourseData,m
     }catch{status="unavailable";notice="Evidence submitted. Automated evaluation unavailable; original work and deterministic signals are preserved.";extracted=fallback();}
   }else extracted=fallback();
   const events=targets.map(t=>[...fixed,...extracted].find(e=>e.targetId===t.id)!);
+  // Preserve each answered probe independently of the consolidated reasoning
+  // interpretation. This observation records the response, not mastery.
+  for(const response of d.data.evidence.filter(e=>e.kind==="followup"&&e.answer.trim())){
+    for(const objectiveId of response.objectiveIds){
+      const target=targets.find(t=>t.objectiveId===objectiveId&&t.type==="EXPLANATION");if(!target)continue;
+      const quote=response.answer.slice(0,600);
+      const observed=event(d,target,{status:"AMBIGUOUS",strength:"INSUFFICIENT",confidence:"HIGH",claim:"A follow-up response was submitted; inspect the linked reasoning observation for its interpretation.",supports:[{evidenceId:response.id,quote,start:0,end:quote.length}],evaluator:"deterministic"},at);
+      observed.id=`${observed.id}-probe-${response.id}`;observed.targetId=`${target.id}-probe-${response.id}`;observed.assessmentItemId=response.id;observed.at=response.at;observed.type="SOCRATIC_RESPONSE";observed.scaffolding="FOLLOW_UP_DEFENDED";
+      events.push(observed);
+    }
+  }
   const bundle:EvidenceBundle={id:`bundle-${d.id}-${d.version}`,at,status,eventIds:events.map(e=>e.id),followupTargetIds:events.filter(e=>e.status==="AMBIGUOUS"||e.status==="NOT_OBSERVED").map(e=>e.targetId),routing:routes,latencyMs:Date.now()-started,retryCount,...(escalationReason?{escalationReason}:{}),...(notice?{notice}:{})};
   const evaluation=status==="evaluated"||status==="needs_review"?project(d,events,routes.join(" → ")):null;
   return {events,bundle,evaluation};
