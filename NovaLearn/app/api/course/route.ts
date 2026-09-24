@@ -26,7 +26,8 @@ import { saveAnswers } from "@/lib/novalearn/evidence";
 import { deriveChapters, generateChapter, approveChapter, refreshChapterOutline } from "@/lib/novalearn/learning-content";
 import { reconcileContent } from "@/lib/novalearn/content-integrity";
 import { advanceDialogue } from "@/lib/novalearn/socratic";
-import { createAssessmentDesign, runAssessmentStage, nextAssessmentStage, resetAssessmentFrom, assessmentStages, approveAssessment, validateAuthenticPublication, reconcileAssessmentEdits, assessmentContextFingerprint, assignAssessmentVariant, privateAssessmentGuide } from "@/lib/novalearn/assessment-engine";
+import { evidenceLinks, evidenceTargets, evaluateStudentEvidence } from "@/lib/novalearn/student-evidence";
+import { createAssessmentDesign, runAssessmentStage, nextAssessmentStage, resetAssessmentFrom, assessmentStages, approveAssessment, validateAuthenticPublication, reconcileAssessmentEdits, assessmentContextFingerprint, assignAssessmentVariant } from "@/lib/novalearn/assessment-engine";
 import { runCompilerJob, compilerIssues, nextCompilerJob, reviewFingerprint } from "@/lib/novalearn/course-compiler";
 import { validateLearning, isReleased, learningConfig, activitySchema } from "@/lib/novalearn/learning-domain";
 export const runtime = "nodejs";
@@ -492,6 +493,7 @@ export async function POST(req: Request) {
             ),
             courseTitle: c.title,
             revision: c.data.revision,
+            evidenceLinks: evidenceLinks(c.data,cp),
           },
           data: {
             evidence: [],
@@ -522,7 +524,8 @@ export async function POST(req: Request) {
         return NextResponse.json(await saveDemo(d));
       }
       if(action==="socratic-next"){
-        const advanced=await advanceDialogue(d,async(system,input)=>{await budget();return generate("dialogue",system,input,b.provider);});
+        const targets=evidenceTargets(d).filter(t=>t.type==="EXPLANATION"||t.type==="APPLICATION").map(t=>({id:t.id,objectiveId:t.objectiveId,expected:t.expected}));
+        const advanced=await advanceDialogue(d,async(system,input)=>{await budget();return generate("dialogue",system,input,b.provider);},targets);
         return NextResponse.json(await saveDemo(advanced));
       }
       if (action === "followups") {
@@ -577,29 +580,18 @@ export async function POST(req: Request) {
       }
       canSubmit(d);
       let notice = "";
+      d.data.evidenceBundle=undefined;
       try {
-        await budget();
-        let privateGuide;
+        let releasedData;
         if(d.snapshot.checkpoint.authentic&&d.snapshot.publicationVersion){
           const [release]=await sb(`/rest/v1/nova_course_versions?course_id=eq.${d.course_id}&version=eq.${d.snapshot.publicationVersion}&select=snapshot`,{},undefined,true);
-          if(release?.snapshot?.data)privateGuide=privateAssessmentGuide(release.snapshot.data,d.snapshot.checkpoint);
+          releasedData=release?.snapshot?.data;
         }
-        const result = await generate(
-          "judge",
-          "Synthesize an evidence bundle for PROFESSOR REVIEW, not a final grade. Never infer authorship, cheating, or honesty. Return {summary,findings:[{objectiveId,level,confidence,rationale,evidenceIds,uncertainty}],misconceptions,nextSteps}. Exactly one finding per objective. level: Strong, Developing, Needs verification. confidence: Low, Medium, High and refers ONLY to evidence sufficiency. Cite actual evidence IDs. Missing/contradictory evidence requires uncertainty. Evaluate artifact + explanation + followups + changed-scenario transfer against the frozen rubric. A polished artifact alone is not proof of mastery.",
-          {
-            snapshot: d.snapshot,
-            privateEvaluationGuide:privateGuide,
-            evidence: d.data.evidence,
-            disclosure: d.data.disclosure,
-            helpUsed: d.data.helpUsed,
-          },
-          b.provider,
-        );
-        d.data.evaluation = {
-          ...validateEvaluation(result.value, d),
-          routing: result.routing,
-        };
+        const result=await evaluateStudentEvidence(d,releasedData,async(tier,system,input)=>{await budget();return generate(tier,system,input,b.provider);});
+        d.data.evidenceEvents=[...(d.data.evidenceEvents||[]),...result.events];
+        d.data.evidenceBundle=result.bundle;
+        d.data.evaluation=result.evaluation;
+        notice=result.bundle.notice||"";
       } catch {
         d.data.evaluation = null;
         notice =
@@ -655,10 +647,12 @@ export async function POST(req: Request) {
             at: now(),
             evidence: structuredClone(d.data.evidence),
             evaluation: structuredClone(d.data.evaluation),
+            evidenceBundle:structuredClone(d.data.evidenceBundle),
             review: structuredClone(review),
           },
         ];
-      d.data.review = { ...review, at: now() };
+      d.data.review = { ...review, at: now(),reviewerId:profile.id };
+      d.data.reviewHistory=[...(d.data.reviewHistory||[]),d.data.review];
       d.status =
         review.decision === "request_revision"
           ? "revision_requested"

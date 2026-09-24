@@ -744,6 +744,13 @@ export function Demonstrate() {
                   {demo.data.evaluation?.summary ||
                     "No automated synthesis is available. Your professor can review the original evidence."}
                 </p>
+                {demo.data.evidenceBundle&&<div className="tinted-box">
+                  <b>What your work shows so far · {demo.data.evidenceBundle.status.replaceAll("_"," ")}</b>
+                  {(demo.data.evidenceEvents||[]).filter(e=>demo.data.evidenceBundle!.eventIds.includes(e.id)).map(e=><p key={e.id}>
+                    <b>{demo.snapshot.objectives.find(o=>o.id===e.objectiveId)?.title||e.objectiveId} · {e.type.toLowerCase().replaceAll("_"," ")}</b>: {e.status.toLowerCase().replaceAll("_"," ")} ({e.strength.toLowerCase()} evidence; {e.confidence.toLowerCase()} interpretation confidence). {e.supports[0]?`Your words: “${e.supports[0].quote}”`:"Your professor may request more evidence."}
+                  </p>)}
+                  <small>These are evidence observations, not a grade or a mastery estimate. Your professor makes the final academic judgment.</small>
+                </div>}
                 {(
                   demo.data.review?.findings ||
                   demo.data.evaluation?.findings ||

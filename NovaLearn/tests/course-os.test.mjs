@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 const temp = await fs.mkdtemp(path.join(process.cwd(), ".nova-tests-course-"));
 async function compile(file, name, replacements = []) {
   let source = await fs.readFile(file, "utf8");
-  for(const dep of ["content-integrity","curriculum-audit","learning-content","socratic"]){
+  for(const dep of ["content-integrity","curriculum-audit","learning-content","socratic","student-evidence"]){
     source=source.replaceAll(`"./${dep}"`,`"./${dep}.mjs"`).replaceAll(`"@/lib/novalearn/${dep}"`,`"./${dep}.mjs"`);
   }
   for (const [a, b] of replacements)
@@ -22,8 +22,8 @@ async function compile(file, name, replacements = []) {
     }).outputText,
   );
 }
-for(const name of ["content-integrity","curriculum-audit","learning-content","socratic"])
-  await compile(`lib/novalearn/${name}.ts`,`${name}.mjs`,[["'./course-domain'","'./domain.mjs'"]]);
+for(const name of ["content-integrity","curriculum-audit","learning-content","socratic","student-evidence"])
+  await compile(`lib/novalearn/${name}.ts`,`${name}.mjs`,[["'./course-domain'","'./domain.mjs'"],["'./learning-domain'","'./learning.mjs'"]]);
 await compile("lib/novalearn/learning-domain.ts", "learning.mjs");
 await compile("lib/novalearn/course-domain.ts", "domain.mjs", [["'./learning-domain'", "'./learning.mjs'"]]);
 await compile("lib/novalearn/course-compiler.ts", "compiler.mjs", [["'./course-domain'", "'./domain.mjs'"],["'./learning-domain'", "'./learning.mjs'"]]);
@@ -248,6 +248,7 @@ const post = (body, origin = "http://localhost:3000") =>
     }),
   );
 const assessmentEngine=await mod("assessment.mjs");
+const studentEvidence=await mod("student-evidence.mjs");
 function seedAssessment(){const inputs={moduleId:course.data.modules[0].id,objectiveIds:course.data.modules[0].objectiveIds,category:"Assignment",format:"Case study",emphasis:"Apply concepts and justify decisions using evidence.",duration:60,difficulty:"Core",verification:"Standard",aiPolicy:"Planning only; disclose use",collaboration:"Individual",resources:"Approved notes",knowledgeQuestions:1};course.data.assessmentDesigns=[assessmentEngine.createAssessmentDesign(course.data,inputs,"design-test","cp-test")];}
 test("student cannot run assessment design stages",async()=>{reset();role="student";const r=await post({action:"assessment-create",courseId:cid,version:course.version});assert.equal(r.status,403);assert.ok(!requests.some(r=>r.url.includes("/chat/completions")));});
 test("stale assessment stages do not spend model budget",async()=>{reset();seedAssessment();const r=await post({action:"assessment-step",courseId:cid,version:-1,designId:"design-test",key:"evidence"});assert.equal(r.status,409);assert.ok(!requests.some(r=>r.url.includes("consume_ai_budget")));});
@@ -361,8 +362,19 @@ test("model outage still delivers complete evidence to the professor", async () 
   const data = await r.json();
   assert.equal(data.status, "submitted");
   assert.equal(data.data.evaluation, null);
+  assert.equal(data.data.evidenceBundle.status,"unavailable");
+  assert.ok(data.data.evidenceEvents.length);
   assert.match(data.notice, /submitted/);
 });
+test("student submission persists exact passages and professor override history without mastery mutation",async()=>{
+  reset();role="student";demo.status="followup";
+  const targets=studentEvidence.evidenceTargets(demo).filter(t=>demo.data.evidence.some(e=>t.kinds.includes(e.kind)&&e.objectiveIds.includes(t.objectiveId)&&e.answer.trim()));
+  ai={observations:targets.map(t=>{const e=demo.data.evidence.find(e=>t.kinds.includes(e.kind)&&e.objectiveIds.includes(t.objectiveId)&&e.answer.trim()),quote=e.answer.slice(0,35);return {targetId:t.id,status:"SUPPORTED",strength:"STRONG",confidence:"HIGH",claim:"The student supplied a relevant explanation for professor review.",supports:[{evidenceId:e.id,start:0,end:quote.length,quote}]};})};
+  let r=await post({action:"submit",id:did,version:demo.version});assert.equal(r.status,200);const submitted=await r.json();assert.equal(submitted.data.evidenceBundle.status,"evaluated");assert.ok(submitted.data.evidenceEvents.some(e=>e.status==="SUPPORTED"));assert.ok(submitted.data.evidenceEvents.every(e=>e.supports.every(s=>submitted.data.evidence.find(x=>x.id===s.evidenceId).answer.slice(s.start,s.end)===s.quote)));assert.ok(!requests.some(x=>x.url.includes("nova_learning_records")));
+  demo={...submitted};role="teacher";const findings=structuredClone(submitted.data.evaluation.findings);
+  r=await post({action:"review",id:did,version:demo.version,review:{decision:"override",note:"I reviewed the original responses and revised the evidence interpretation.",findings}});assert.equal(r.status,200);const reviewed=await r.json();assert.equal(reviewed.status,"reviewed");assert.equal(reviewed.data.reviewHistory.length,1);assert.equal(reviewed.data.reviewHistory[0].reviewerId,user);assert.deepEqual(reviewed.data.evidenceEvents,submitted.data.evidenceEvents);
+});
+test("student cannot evaluate another student's submission",async()=>{reset();role="student";demo.student_id="another-student";demo.status="followup";const r=await post({action:"submit",id:did,version:demo.version});assert.equal(r.status,403);assert.ok(!requests.some(x=>x.url.includes("/chat/completions")));});
 test("review normalizes unsupported findings and archives revision evidence", async () => {
   reset();
   const findings = structuredClone(demo.data.evaluation.findings);

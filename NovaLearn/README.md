@@ -12,6 +12,8 @@ The Authentic Assessment Engine adds a saved design pipeline: objective evidence
 
 The connected-engine patch adds structured chapter/topic/content blocks, professor approval before downstream generation, a source-coverage/gap report, approved learning content in assessment context, and a bounded stateful Socratic defense. Existing materials and published versions stay usable. See **[Connected engines guide](docs/CONNECTED-ENGINES.md)**, **[Audit matrix](docs/ENGINE-AUDIT.md)** and **[validation results](docs/ENGINE-VALIDATION.md)** for real/demo boundaries and verification results. No additional database migration is required.
 
+The Student Evidence Engine stores objective-linked observations with exact student-response spans, separate evidence-strength and interpretation-confidence labels, uncertainty and optional grounded misconceptions. It uses the existing assessment targets, bounded Socratic dialogue, professor Evidence Review and demonstration JSONB record. The preview is explicitly scripted; provider failures leave the original student work available for professor review. Code-test signals are accepted only from server-produced results; NovaLearn does not yet run submitted code in a sandbox. Evidence observations do not directly change mastery.
+
 ## Explore immediately
 
 Without Supabase credentials, the app opens in **Professor** preview with an example course. Switch between **Professor** and **Student** in the banner. Edit course graphs, create materials/checkpoints, release content, complete evidence bundles, review them, request revisions, and inspect class insights.
@@ -134,7 +136,7 @@ npm run dev:local      # Next.js development, localhost:3000
 npm run build:local    # Standard Next.js production build
 npm run start:local    # Serve local production build
 npm run typecheck     # TypeScript check
-npm test              # Legacy, course/evidence, and adaptive-learning tests
+npm test              # Existing and student-evidence engine tests
 ```
 
 `npm run build` retains optional Sites/Vinext hosting. VS Code on Windows uses the `:local` commands without Bash, Wrangler, or paid hosting. Hosted Supabase/AI calls need internet and may incur provider costs.

@@ -1,12 +1,12 @@
 # Connected-engine validation
 
-Validated on an isolated local copy of baseline `f3055e0`. Validation did not modify any live Supabase project, provider credentials or deployment; the user subsequently authorized a tested Git commit and push. No browser automation runtime was available.
+The connected-engine baseline was published as `b866487`. The subsequent Student Evidence Engine is a local, uncommitted patch; no GitHub commit, push, pull request, database migration or deployment was performed for this evidence-engine task. No browser automation runtime was available.
 
 ## Results
 
 | Check | Result |
 |---|---|
-| `npm test` | Pass: 136/136 tests across six suites, including new connected-engine and authenticated API coverage. |
+| `npm test` | Pass: 149 tests across seven suites, including student evidence, authenticated API, Socratic linkage and existing engine coverage. |
 | `npm run typecheck` | Pass. |
 | `npm run build:local` | Pass: Next.js compiled the page and all five API routes. |
 | `npm run build` | Pass: bounded Vinext build; fixed the inherited non-executable shell-wrapper invocation by invoking the helper with Bash. Vinext warns about existing large chunks and its route-classification limitation. |

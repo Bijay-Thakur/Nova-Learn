@@ -340,6 +340,23 @@ export function EvidenceReview() {
                 </div>
               </details>
             ))}
+            {d.data.evidenceBundle&&<details className="course-source" open>
+              <summary>Evidence observations · {d.data.evidenceBundle.status.replaceAll("_"," ")}</summary>
+              <p className="fine">These observations are provisional. Strength describes the submitted work; confidence describes how certain the interpretation is. Neither is a grade or mastery decision.</p>
+              {d.data.evidenceBundle.notice&&<p>{d.data.evidenceBundle.notice}</p>}
+              {d.data.evidenceBundle.escalationReason&&<p className="fine">Additional review: {d.data.evidenceBundle.escalationReason}</p>}
+              {(d.data.evidenceEvents||[]).filter(e=>d.data.evidenceBundle!.eventIds.includes(e.id)).map(e=><div className="course-finding" key={e.id}>
+                <b>{d.snapshot.objectives.find(o=>o.id===e.objectiveId)?.title||e.objectiveId} · {e.type.replaceAll("_"," ")}</b>
+                <div className="course-actions"><Badge>{e.status.replaceAll("_"," ")}</Badge><Badge>{e.strength.toLowerCase()} evidence</Badge><Badge>{e.confidence.toLowerCase()} confidence</Badge></div>
+                <p>Expected: {e.expected}</p><p className="fine">Rubric: {e.criterion} · Target: {e.targetId} · Item: {e.assessmentItemId}</p>
+                <p>{e.claim}</p>
+                {e.supports.map((s,i)=><p className="fine" key={i}>Exact support in <a href={`#evidence-${s.evidenceId}`}>{s.evidenceId}</a> [{s.start}–{s.end}]: “{s.quote}”</p>)}
+                {e.misconception&&<p className="fine">Possible misconception ({e.misconception.conceptId}): {e.misconception.statement} · “{e.misconception.support.quote}”</p>}
+                <p className="fine">{e.scaffolding.replaceAll("_"," ")} · {e.evaluator}{e.routing?` (${e.routing})`:""}</p>
+              </div>)}
+              {d.data.evidenceBundle.followupTargetIds.length>0&&<p className="fine">Possible follow-up targets: {d.data.evidenceBundle.followupTargetIds.join(", ")}. Use a professor revision request when more evidence is needed.</p>}
+            </details>}
+            {!d.data.evidenceBundle&&<p className="fine">Legacy bundle: findings cite response IDs only; exact passage observations are unavailable. Check the original work before confirming.</p>}
             <details className="course-source">
               <summary>Tool use & support disclosed by the student</summary>
               <h4>Tools</h4>
@@ -496,6 +513,7 @@ export function EvidenceReview() {
           </Panel>
           <Panel>
             <h3>Evidence trail</h3>
+            {!!d.data.reviewHistory?.length&&<details><summary>Professor decision history · {d.data.reviewHistory.length}</summary>{d.data.reviewHistory.map((review,i)=><div className="course-trail" key={`${review.at}-${i}`}><span/><div><b>{review.decision.replaceAll("_"," ")}</b><p>{review.note}</p><small>{new Date(review.at).toLocaleString()} · {review.findings.map(f=>`${f.objectiveId}: ${f.level}`).join("; ")}</small></div></div>)}</details>}
             {d.data.dialogue&&<details><summary>Socratic defense · {d.data.dialogue.mode} · {d.data.dialogue.status}</summary><p>{d.data.dialogue.reason}</p>{d.data.dialogue.turns.map(t=><p key={t.questionId}><b>{t.questionId}</b>: {t.uncertainty}</p>)}<p className="fine">Probe reasons are suggestions, not established misconceptions or grades. Review the student’s actual responses above.</p></details>}
             {d.data.events.map((e, i) => (
               <div className="course-trail" key={i}>

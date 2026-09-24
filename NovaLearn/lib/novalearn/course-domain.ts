@@ -205,6 +205,29 @@ export type EvidenceItem = {
   answer: string;
   at: string;
   objectiveIds: string[];
+  modality?: "text" | "transcript" | "code";
+  execution?: { source: "server"; passed: number; failed: number; output?: string };
+};
+export type EvidenceSupport = { evidenceId: string; quote: string; start: number; end: number };
+export type EvidenceEvent = {
+  id: string; submissionId: string; studentId: string; courseId: string;
+  assessmentId: string; assessmentItemId: string; targetId: string;
+  moduleId: string; chapterIds: string[]; topicIds: string[]; conceptIds: string[];
+  objectiveId: string; expected: string; criterion: string;
+  attemptNumber: number; variantId?: string;
+  type: "DIRECT_CORRECTNESS" | "APPLICATION" | "EXPLANATION" | "TRANSFER" | "SOCRATIC_RESPONSE";
+  status: "SUPPORTED" | "PARTIALLY_SUPPORTED" | "CONTRADICTED" | "NOT_OBSERVED" | "AMBIGUOUS";
+  strength: "STRONG" | "MODERATE" | "WEAK" | "CONTRADICTORY" | "INSUFFICIENT";
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  claim: string; supports: EvidenceSupport[];
+  misconception?: { conceptId: string; statement: string; support: EvidenceSupport };
+  scaffolding: "INDEPENDENT" | "SUPPORT_DISCLOSED" | "FOLLOW_UP_DEFENDED" | "REVISED_AFTER_FEEDBACK";
+  evaluator: "deterministic" | "model"; routing?: string; promptVersion?: string; at: string;
+};
+export type EvidenceBundle = {
+  id: string; at: string; status: "evaluated" | "needs_review" | "unavailable" | "demo";
+  eventIds: string[]; followupTargetIds: string[]; routing: string[]; latencyMs: number; retryCount: number;
+  escalationReason?: string; notice?: string;
 };
 export type Finding = {
   objectiveId: string;
@@ -221,6 +244,10 @@ export type Evaluation = {
   nextSteps: string[];
   source: "AI suggestion" | "Example only";
   routing?: string;
+};
+export type ProfessorReview = {
+  decision: "confirm" | "override" | "request_revision";
+  note: string; findings: Finding[]; at: string; reviewerId?: string;
 };
 export type Demonstration = {
   id: string;
@@ -241,13 +268,17 @@ export type Demonstration = {
     objectives: Objective[];
     courseTitle: string;
     revision: number;
+    evidenceLinks?: { objectiveId:string; moduleId:string; chapterIds:string[]; topicIds:string[]; conceptIds:string[] }[];
   };
   data: {
-    dialogue?: { status:"active"|"complete"; maxProbes:number; reason:string; mode:"live"|"demo"; turns:{questionId:string; uncertainty:string; evidenceIds?:string[]; objectiveIds?:string[]; at:string}[] };
+    dialogue?: { status:"active"|"complete"; maxProbes:number; reason:string; mode:"live"|"demo"; turns:{questionId:string; uncertainty:string; evidenceIds?:string[]; objectiveIds?:string[]; targetIds?:string[]; at:string}[] };
+    evidenceEvents?: EvidenceEvent[];
+    evidenceBundle?: EvidenceBundle;
     revisions?: {
       at: string;
       evidence: EvidenceItem[];
       evaluation: Evaluation | null;
+      evidenceBundle?: EvidenceBundle;
       review: unknown;
     }[];
     evidence: EvidenceItem[];
@@ -256,12 +287,8 @@ export type Demonstration = {
     helpUsed: string;
     events: { at: string; action: string }[];
     evaluation: Evaluation | null;
-    review: {
-      decision: "confirm" | "override" | "request_revision";
-      note: string;
-      findings: Finding[];
-      at: string;
-    } | null;
+    review: ProfessorReview | null;
+    reviewHistory?: ProfessorReview[];
   };
   created_at: string;
 };

@@ -77,6 +77,7 @@ export function saveAnswers(d: Demonstration, input: unknown) {
     add("reflection", "reflection", "What changed in your understanding, what was difficult, and what will you do next?", b.reflection, cp.objectiveIds);
   }
   d.data.evidence = evidence;
+  if(JSON.stringify(old.map(e=>[e.id,e.answer]))!==JSON.stringify(evidence.map(e=>[e.id,e.answer]))){d.data.evidenceBundle=undefined;d.data.evaluation=null;}
   d.data.disclosure = b.disclosure;
   d.data.helpUsed = b.helpUsed;
   return d;

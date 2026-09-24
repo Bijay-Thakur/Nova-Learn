@@ -6,6 +6,7 @@ import { saveAnswers } from "./evidence";
 import { deriveChapters, generateChapter, approveChapter, refreshChapterOutline } from "./learning-content";
 import { reconcileContent } from "./content-integrity";
 import { advanceDialogue } from "./socratic";
+import { evidenceLinks, evidenceTargets, evaluateStudentEvidence } from "./student-evidence";
 import { previewData } from "./preview";
 import { sampleCourse, sampleDemonstrations } from "./course-sample";
 import {
@@ -229,6 +230,7 @@ export async function coursePreview(action: string, b: any = {}) {
         ),
         courseTitle: published.title,
         revision: published.data.revision,
+        evidenceLinks:evidenceLinks(published.data,cp),
       },
       data: {
         evidence: [],
@@ -256,7 +258,7 @@ export async function coursePreview(action: string, b: any = {}) {
   if(action==="socratic-next"){
     if(!d||d.student_id!==profile.id||profile.role!=="student")throw new Error("Action not permitted.");
     if(d.version!==b.version)throw new Error("This submission changed. Reload before saving.");
-    const advanced=await advanceDialogue(d);advanced.version++;s.demonstrations=s.demonstrations.map(x=>x.id===d.id?advanced:x);store(s);return advanced;
+    const advanced=await advanceDialogue(d,undefined,evidenceTargets(d).filter(t=>t.type==="EXPLANATION"||t.type==="APPLICATION").map(t=>({id:t.id,objectiveId:t.objectiveId,expected:t.expected})));advanced.version++;s.demonstrations=s.demonstrations.map(x=>x.id===d.id?advanced:x);store(s);return advanced;
   }
   if (action === "followups") {
     if (!d) throw new Error("Demonstration not found");
@@ -283,6 +285,9 @@ export async function coursePreview(action: string, b: any = {}) {
   if (action === "submit") {
     if (!d) throw new Error("Demonstration not found");
     canSubmit(d);
+    const analyzed=await evaluateStudentEvidence(d,undefined);
+    d.data.evidenceEvents=[...(d.data.evidenceEvents||[]),...analyzed.events];
+    d.data.evidenceBundle=analyzed.bundle;
     d.status = "submitted";
     d.data.review = null;
     d.data.evaluation = {
@@ -318,10 +323,12 @@ export async function coursePreview(action: string, b: any = {}) {
           at: now,
           evidence: structuredClone(d.data.evidence),
           evaluation: structuredClone(d.data.evaluation),
+          evidenceBundle:structuredClone(d.data.evidenceBundle),
           review: structuredClone(b.review),
         },
       ];
-    d.data.review = { ...b.review, at: now };
+    d.data.review = { ...b.review, at: now, reviewerId:profile.id };
+    if(d.data.review)d.data.reviewHistory=[...(d.data.reviewHistory||[]),d.data.review];
     d.status =
       b.review.decision === "request_revision"
         ? "revision_requested"

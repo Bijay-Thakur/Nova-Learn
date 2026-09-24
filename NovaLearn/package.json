@@ -10,7 +10,7 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
     "build": "bash scripts/build-verified.sh",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run test:core && npm run test:course && npm run test:adaptive && npm run test:compiler && npm run test:assessment && npm run test:connected",
+    "test": "npm run test:core && npm run test:course && npm run test:adaptive && npm run test:compiler && npm run test:assessment && npm run test:connected && npm run test:evidence",
     "test:assessment": "node --test tests/assessment-engine.test.mjs",
     "test:compiler": "node --test tests/course-compiler.test.mjs",
     "test:adaptive": "node --test tests/adaptive-learning.test.mjs",
@@ -23,6 +23,7 @@
     "test:core": "node --test tests/novalearn.test.mjs",
     "test:course": "node --test tests/course-os.test.mjs",
     "test:connected": "node --test tests/connected-engines.test.mjs",
+    "test:evidence": "node --test tests/student-evidence.test.mjs",
     "test:ui": "node --test tests/ui-components.test.mjs tests/rendered-html.test.mjs"
   },
   "dependencies": {
