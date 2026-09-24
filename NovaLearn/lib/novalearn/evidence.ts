@@ -37,6 +37,7 @@ export function saveAnswers(d: Demonstration, input: unknown) {
     (old.find((e) => e.kind === "artifact")?.answer !== b.artifact ||
       old.find((e) => e.kind === "explanation")?.answer !== b.explanation);
   if (changed) {
+    delete d.data.dialogue;
     d.data.questions = [];
     d.data.evaluation = null;
     d.status = "draft";
@@ -44,6 +45,15 @@ export function saveAnswers(d: Demonstration, input: unknown) {
       at: now,
       action: "Initial work changed; follow-ups must be regenerated",
     });
+  }
+  if(!changed&&d.data.dialogue){
+    const edited=d.data.questions.findIndex(q=>{const prior=old.find(e=>e.id===q.id);return prior&&prior.answer!==(b.followupAnswers[q.id]||"");});
+    if(edited>=0){
+      d.data.questions=d.data.questions.slice(0,edited+1);
+      d.data.dialogue.turns=d.data.dialogue.turns.filter(t=>d.data.questions.some(q=>q.id===t.questionId));
+      d.data.dialogue.status="active";d.data.dialogue.reason="A previous answer changed; review the updated reasoning.";
+      d.data.evaluation=null;d.status="followup";
+    }
   }
   add("artifact", "artifact", cp.prompt, b.artifact, cp.objectiveIds);
   add(

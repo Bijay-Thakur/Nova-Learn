@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { compilerInputSchema, compilerSchema, graphSchema, materialSchema, checkpointSchema, courseDataSchema, validateGraph, validateCheckpoint, retrieve, type CourseData } from "./course-domain";
 import { activitySchema, learningConfig, validateLearning } from "./learning-domain";
+import { curriculumAudit } from "./curriculum-audit";
 
 export type CompilerInputs = z.infer<typeof compilerInputSchema>;
 export type CompilerJob = {key:string;name:string;group:string};
 export type CompilerModel = (system:string,input:unknown)=>Promise<{value:any;routing:string}>;
-export function reviewFingerprint(d:CourseData){return JSON.stringify([d.modules,d.objectives,d.sources,d.materials,d.checkpoints,d.learning?.activities,d.learning?.concepts,d.compiler?.inputs]);}
+export function reviewFingerprint(d:CourseData){return JSON.stringify([d.modules,d.objectives,d.sources,d.materials,d.chapters,d.checkpoints,d.learning?.activities,d.learning?.concepts,d.compiler?.inputs]);}
 export function defaultInputs(data:CourseData):CompilerInputs {
   const l=learningConfig(data);
   return {code:"",level:"Introductory",weeks:l.weeks,hoursPerWeek:3,moduleCount:data.modules.length||6,checkpointCount:3,intent:l.teachingIntent||"",prerequisites:"",breakWeeks:[],startDate:"",assessmentWeights:{assignments:40,checkpoints:30,final:30}};
@@ -18,6 +19,8 @@ export function validateInputs(raw:unknown) {
   if(Object.values(i.assessmentWeights).reduce((a,b)=>a+b,0)!==100)throw new Error("Assessment category weights must total 100%.");
   if(i.checkpointCount===1 && i.assessmentWeights.checkpoints!==0)throw new Error("With only a final checkpoint, set other checkpoint weight to 0%.");
   if(i.startDate && (Number.isNaN(Date.parse(i.startDate))||new Date(i.startDate).toISOString().slice(0,10)!==i.startDate))throw new Error("Enter a valid semester start date.");
+  if(i.endDate&&(Number.isNaN(Date.parse(i.endDate))||new Date(i.endDate).toISOString().slice(0,10)!==i.endDate||i.startDate&&i.endDate<i.startDate))throw new Error("Enter a valid semester end date after the start date.");
+  if(i.endDate&&i.startDate&&(Date.parse(i.endDate)-Date.parse(i.startDate))/86400000+1<(i.weeks-1)*7+1)throw new Error("Semester dates are shorter than the requested teaching weeks.");
   return i;
 }
 export function compilerJobs(d:CourseData):CompilerJob[] {
@@ -61,6 +64,9 @@ export function compilerIssues(d:CourseData):CompilerIssue[] {
   if(!summative.some(x=>x.category==="Final project"))error("An integrated final project is required.");
   for(const cp of d.checkpoints){try{validateCheckpoint(cp,{...d,graphApproved:true});}catch(e){error(`${cp.title}: ${(e as Error).message}`);}if(!cp.published)error(`${cp.title}: assessment still needs professor approval.`);}
   if(d.objectives.some(o=>!d.checkpoints.some(cp=>cp.objectiveIds.includes(o.id))))error("Some learning outcomes have no assessment evidence.");
+  for(const outcome of i.explicitOutcomes||[])if(!d.objectives.some(o=>o.title===outcome))error(`Preserve the professor-defined outcome in the graph: ${outcome}`);
+  const scope=d.modules.flatMap(m=>[m.title,...m.concepts]).join(" ").toLowerCase();
+  for(const topic of i.requiredTopics||[])if(!scope.includes(topic.toLowerCase()))error(`Represent the required topic explicitly in the graph: ${topic}`);
   if(!d.compiler.reviewed)error("Complete the final professor review acknowledgment.");
   if(!d.sources.some(s=>s.approved))out.push({level:"warning",text:"No approved reference material. Content is an ungrounded draft until independently checked by the professor."});
   if(d.materials.some(m=>!m.sourceIds.length))out.push({level:"warning",text:"Some teaching materials have no source citations. Verify their factual accuracy before releasing."});
@@ -68,8 +74,8 @@ export function compilerIssues(d:CourseData):CompilerIssue[] {
 }
 
 function templateGraph(d:CourseData,i:CompilerInputs){
-  const topics=d.syllabus.split(/\n+/).map(s=>s.replace(/^\s*[\d.)-]+\s*/,"").trim()).filter(s=>s.length>2);
-  return {objectives:Array.from({length:Math.min(i.moduleCount,5)},(_,n)=>({id:`co${n+1}`,title:`Analyze and apply ${topics[n]?.slice(0,130)||`course topic ${n+1}`} using evidence and explanation`,level:"Apply"})),modules:Array.from({length:i.moduleCount},(_,n)=>({id:`cm${n+1}`,title:topics[n]?.slice(0,180)||`Module ${n+1} — refine this topic`,week:n+1,concepts:[topics[n]?.slice(0,100)||`Concept ${n+1}`],objectiveIds:[`co${n%Math.min(i.moduleCount,5)+1}`],prerequisites:n?[`cm${n}`]:[]}))};
+  const topics=[...new Set([...(i.requiredTopics||[]),...d.syllabus.split(/\n+/).map(s=>s.replace(/^\s*[\d.)-]+\s*/,"").trim()).filter(s=>s.length>2),...(i.optionalTopics||[])])];
+  return {objectives:Array.from({length:Math.min(i.moduleCount,5)},(_,n)=>({id:`co${n+1}`,title:`Analyze and apply ${topics[n]?.slice(0,130)||`course topic ${n+1}`} using evidence and explanation`,level:"Apply"})),modules:Array.from({length:i.moduleCount},(_,n)=>({id:`cm${n+1}`,title:topics[n]?.slice(0,180)||`Module ${n+1} — refine this topic`,week:n+1,concepts:topics.filter((_,k)=>k%i.moduleCount===n).slice(0,20).map(t=>t.slice(0,120)).length?topics.filter((_,k)=>k%i.moduleCount===n).slice(0,20).map(t=>t.slice(0,120)):[`Concept ${n+1}`],objectiveIds:[`co${n%Math.min(i.moduleCount,5)+1}`],prerequisites:n?[`cm${n}`]:[]}))};
 }
 function assessmentTemplate(d:CourseData,moduleId:string,category:"Assignment"|"Teach Nova"|"Checkpoint"|"Final project",n:number){
   const m=d.modules.find(m=>m.id===moduleId)!;
@@ -89,8 +95,9 @@ export async function runCompilerJob(original:CourseData,key:string,model?:Compi
   const started=Date.now();let routing=model?"Deterministic code":"Example templates / deterministic code";
   const ask=async(system:string,input:unknown,fallback:()=>unknown)=>{if(!model)return fallback() as any;const r=await model(system,input);routing=r.routing;return r.value;};
   const i=validateInputs(c.inputs);
+  if((key.startsWith("module:")||key==="assessments")&&!d.graphApproved)throw new Error("Review the planned structure and approve the course graph before generating teaching or assessment content.");
   if(key==="intent"){
-    c.intent=compilerSchema.shape.intent.unwrap().parse(await ask("Interpret the professor's university teaching intent. Return {summary,priorities:[3-6 concise priorities]}. Preserve constraints; do not invent policies or objectives the professor did not request.",{intent:i.intent,level:i.level,prerequisites:i.prerequisites},()=>({summary:i.intent,priorities:["Application and explanation before recall",`Depth: ${i.level}`,"Professor reviews every draft before release"]})));
+    c.intent=compilerSchema.shape.intent.unwrap().parse(await ask("Interpret the professor's university teaching intent. Return {summary,priorities:[3-6 concise priorities]}. Preserve constraints; do not invent policies or objectives the professor did not request.",{inputs:i},()=>({summary:i.intent,priorities:["Application and explanation before recall",`Depth: ${i.level}`,"Professor reviews every draft before release"]})));
   }else if(key==="sources"){
     c.sourceMap=d.sources.filter(s=>s.approved).map(s=>({sourceId:s.id,name:s.name,chunks:s.chunks.length,characters:s.text.length}));
   }else if(key==="constraints"){
@@ -98,8 +105,14 @@ export async function runCompilerJob(original:CourseData,key:string,model?:Compi
   }else if(key==="graph"){
     if(!d.modules.length){
       const sources=d.sources.filter(s=>s.approved).flatMap(s=>s.chunks.slice(0,2).map(x=>({id:x.id,text:x.text}))).slice(0,12);
-      const g=graphSchema.parse(await ask("Build a university graph. Return {objectives:[{id,title,level}],modules:[{id,title,week,concepts,objectiveIds,prerequisites}]}. levels Understand|Apply|Analyze|Evaluate|Create. Produce EXACTLY moduleCount modules, 3-10 measurable outcomes (at most 10), valid IDs, nonempty concept lists and acyclic prerequisites. Treat outline as scope, source excerpts as references. Do not invent citations or institutional policies.",{inputs:i,intent:c.intent,outline:d.syllabus.slice(0,20000),sources},()=>templateGraph(d,i)));
+      const g=graphSchema.parse(await ask("Build a university graph. Return {objectives:[{id,title,level}],modules:[{id,title,week,concepts,objectiveIds,prerequisites}]}. levels Understand|Apply|Analyze|Evaluate|Create. Produce EXACTLY moduleCount modules, 3-10 measurable outcomes (at most 10), valid IDs, nonempty concept lists and acyclic prerequisites. Treat outline and requiredTopics as scope, source excerpts as references. Preserve every inputs.explicitOutcomes title verbatim and map them to appropriate modules; explicit professor outcomes override your suggestions. Do not invent citations or institutional policies.",{inputs:i,intent:c.intent,outline:d.syllabus.slice(0,20000),sources},()=>templateGraph(d,i)));
       validateGraph(g);if(g.modules.length!==i.moduleCount)throw new Error("Model returned a different module count. Retry or edit the graph manually.");
+      if(i.explicitOutcomes?.length){
+        // Professor outcomes are authoritative; model suggestions cannot replace them.
+        if(model){if(i.explicitOutcomes.some(title=>!g.objectives.some(o=>o.title===title)))throw new Error("The generated graph changed a professor-defined outcome. Retry; supplied outcome wording must be preserved.");}
+        else {g.objectives=i.explicitOutcomes.map((title,n)=>({id:`prof-outcome-${n+1}`,title,level:"Apply" as const}));g.modules.forEach((m,n)=>{m.objectiveIds=g.objectives.filter((_,k)=>k%g.modules.length===n).map(o=>o.id);if(!m.objectiveIds.length)m.objectiveIds=[g.objectives[n%g.objectives.length].id];});}
+      }
+      g.modules.forEach(m=>{m.sourceIds=retrieve(d.sources.filter(s=>!s.moduleIds?.length||s.moduleIds.includes(m.id)),[m.title,...m.concepts].join(" ")).map(s=>s.id);});
       d.modules=g.modules;d.objectives=g.objectives;d.graphApproved=false;
       d.learning={...learningConfig({...d,learning:undefined}),weeks:i.weeks,teachingIntent:i.intent.slice(0,2000),releasedModuleIds:[],activities:[]};
     }else validateGraph(d); // Adopt existing IDs and content; never replace an existing course.
@@ -143,6 +156,7 @@ export async function runCompilerJob(original:CourseData,key:string,model?:Compi
     if(JSON.stringify(planSemester(d,i))!==JSON.stringify(c.schedule))throw new Error("Schedule no longer matches the course graph. Re-run the planner.");
   }else throw new Error("Unknown compiler stage.");
   c.reviewed=false;
+  c.analysis=curriculumAudit(d);
   if(new Set(d.materials.map(x=>x.id)).size!==d.materials.length||new Set(d.checkpoints.map(x=>x.id)).size!==d.checkpoints.length)throw new Error("Generated IDs conflict with existing content. Review obsolete generated assessments in the editor before resuming; existing content was preserved.");
   c.log=[...c.log.filter(l=>l.key!==key),{key,status:"complete",at:new Date().toISOString(),ms:Date.now()-started,routing,detail:key==="sources"?`${c.sourceMap.length} approved documents indexed; existing chunks reused.`:key==="constraints"?`${i.weeks-i.breakWeeks.length} teaching weeks × ${i.hoursPerWeek} hours = ${(i.weeks-i.breakWeeks.length)*i.hoursPerWeek} contact hours.`:key==="graph"&&original.modules.length?"Existing graph adopted; IDs and authored content preserved.":"Structured output validated and saved."}];
   d.audit=[...d.audit.slice(-99),{at:new Date().toISOString(),action:`Compiler v1: ${key}`}];d.revision++;

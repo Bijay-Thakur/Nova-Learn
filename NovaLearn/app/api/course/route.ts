@@ -23,6 +23,9 @@ import {
   routingSummary,
 } from "@/lib/novalearn/course-ai";
 import { saveAnswers } from "@/lib/novalearn/evidence";
+import { deriveChapters, generateChapter, approveChapter, refreshChapterOutline } from "@/lib/novalearn/learning-content";
+import { reconcileContent } from "@/lib/novalearn/content-integrity";
+import { advanceDialogue } from "@/lib/novalearn/socratic";
 import { createAssessmentDesign, runAssessmentStage, nextAssessmentStage, resetAssessmentFrom, assessmentStages, approveAssessment, validateAuthenticPublication, reconcileAssessmentEdits, assessmentContextFingerprint, assignAssessmentVariant, privateAssessmentGuide } from "@/lib/novalearn/assessment-engine";
 import { runCompilerJob, compilerIssues, nextCompilerJob, reviewFingerprint } from "@/lib/novalearn/course-compiler";
 import { validateLearning, isReleased, learningConfig, activitySchema } from "@/lib/novalearn/learning-domain";
@@ -208,7 +211,6 @@ export async function POST(req: Request) {
       const c = await course();
       if (c.teacher_id !== profile.id) throw new Error("Action not permitted.");
       const data = courseDataSchema.parse(b.data);
-      reconcileAssessmentEdits(data,c.data);
       const title = z.string().trim().min(3).max(200).parse(b.title);
       await checkClass(b.classId || null);
       const changed =
@@ -228,6 +230,8 @@ export async function POST(req: Request) {
         );
         return { ...s, chunks: old?.chunks || chunkText(s.text, s.id) };
       });
+      reconcileContent(data,c.data);
+      reconcileAssessmentEdits(data,c.data);
       if(data.compiler&&reviewFingerprint(data)!==reviewFingerprint(c.data))data.compiler.reviewed=false;
       const moduleIds = new Set(data.modules.map((m) => m.id)),
         chunkIds = new Set(
@@ -271,6 +275,22 @@ export async function POST(req: Request) {
           updated_at: now(),
         }),
       );
+    }
+    if (["content-outline","content-generate","content-approve","content-refresh"].includes(action)) {
+      requireTeacher();const c=await course();
+      if(c.teacher_id!==profile.id)throw new Error("Action not permitted.");
+      if(b.version!==c.version)throw new Error("This record changed in another session. Reload before saving.");
+      const data=structuredClone(c.data);
+      if(action==="content-outline")data.chapters=deriveChapters(data);
+      else {
+        const chapterId=z.string().min(1).max(100).parse(b.chapterId);
+        const ch=action==="content-approve"?approveChapter(data,chapterId):action==="content-refresh"?refreshChapterOutline(data,chapterId):await generateChapter(data,chapterId,async(system,input)=>{await budget();return generate("draft",system,input,b.provider);},async(system,input)=>{await budget();return generate("judge",system,input,b.provider);});
+        data.chapters=data.chapters!.map(c=>c.id===chapterId?ch:c);
+      }
+      reconcileAssessmentEdits(data,c.data);
+      if(data.compiler)data.compiler.reviewed=false;
+      data.revision++;data.audit=[...data.audit.slice(-99),{at:now(),action:`Learning content: ${action}`}];
+      return NextResponse.json(await update("nova_courses",c.id,c.version,{data:courseDataSchema.parse(data),version:c.version+1,updated_at:now()}));
     }
     if (["assessment-create","assessment-step","assessment-reset","assessment-approve"].includes(action)) {
       requireTeacher();
@@ -490,7 +510,7 @@ export async function POST(req: Request) {
         }),
       );
     }
-    if (["evidence", "followups", "submit"].includes(action)) {
+    if (["evidence", "followups", "socratic-next", "submit"].includes(action)) {
       requireStudent();
       const d = await demo();
       if (["submitted", "reviewed"].includes(d.status))
@@ -500,6 +520,10 @@ export async function POST(req: Request) {
       if (action === "evidence") {
         saveAnswers(d, b);
         return NextResponse.json(await saveDemo(d));
+      }
+      if(action==="socratic-next"){
+        const advanced=await advanceDialogue(d,async(system,input)=>{await budget();return generate("dialogue",system,input,b.provider);});
+        return NextResponse.json(await saveDemo(advanced));
       }
       if (action === "followups") {
         if (d.data.questions.length) return NextResponse.json(d);

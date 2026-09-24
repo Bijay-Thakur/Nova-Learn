@@ -6,3 +6,17 @@
 @keyframes nova-greet{0%,100%{transform:rotate(0)}25%{transform:rotate(-7deg)}75%{transform:rotate(7deg)}}
 .nova-fallback{animation:nova-float 4.5s ease-in-out infinite}.nova-avatar.waving .nova-fallback{animation:nova-greet .6s ease-in-out 3}.nova-avatar.motion-paused .nova-fallback{animation:none}
 @media(prefers-reduced-motion:reduce){.learning-roadmap button{transition:none}.nova-fallback,.nova-avatar.waving .nova-fallback{animation:none}}
+/* Structured chapters extend the existing panels without changing global layout. */
+.learning-chapter{margin-top:20px;border:1px solid var(--border,#e6e5f2);border-radius:14px;padding:18px;min-width:0}
+.learning-chapter>summary{cursor:pointer;font-weight:650;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.learning-view-controls{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+.learning-block{padding:18px 0;border-bottom:1px solid var(--border,#e6e5f2);overflow-wrap:anywhere}
+.learning-block pre{white-space:pre-wrap;overflow-x:auto;background:#f4f2fb;border-radius:10px;padding:16px;color:#262446}
+.learning-block figure{margin:16px 0}
+.learning-block figcaption{font-size:.85rem;color:#625c7c}
+.learning-table-scroll{overflow-x:auto;margin:14px 0}
+.learning-table-scroll table{width:100%;border-collapse:collapse}
+.learning-table-scroll th,.learning-table-scroll td{text-align:left;padding:10px;border:1px solid #e6e5f2}
+.learning-table-scroll th{background:#f4f2fb}
+.learning-slide{padding:24px;margin-top:18px;border:1px solid #e6e5f2;border-radius:14px;background:linear-gradient(140deg,#fff,#f6f3ff)}
+@media(max-width:767px){.learning-chapter,.learning-slide{padding:14px}.learning-block pre{font-size:.8rem}}

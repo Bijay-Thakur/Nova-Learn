@@ -7,6 +7,9 @@ import { pathToFileURL } from "node:url";
 const temp = await fs.mkdtemp(path.join(process.cwd(), ".nova-tests-course-"));
 async function compile(file, name, replacements = []) {
   let source = await fs.readFile(file, "utf8");
+  for(const dep of ["content-integrity","curriculum-audit","learning-content","socratic"]){
+    source=source.replaceAll(`"./${dep}"`,`"./${dep}.mjs"`).replaceAll(`"@/lib/novalearn/${dep}"`,`"./${dep}.mjs"`);
+  }
   for (const [a, b] of replacements)
     source = source.replaceAll(a, b).replaceAll(a.replaceAll("'", '"'), b);
   await fs.writeFile(
@@ -19,6 +22,8 @@ async function compile(file, name, replacements = []) {
     }).outputText,
   );
 }
+for(const name of ["content-integrity","curriculum-audit","learning-content","socratic"])
+  await compile(`lib/novalearn/${name}.ts`,`${name}.mjs`,[["'./course-domain'","'./domain.mjs'"]]);
 await compile("lib/novalearn/learning-domain.ts", "learning.mjs");
 await compile("lib/novalearn/course-domain.ts", "domain.mjs", [["'./learning-domain'", "'./learning.mjs'"]]);
 await compile("lib/novalearn/course-compiler.ts", "compiler.mjs", [["'./course-domain'", "'./domain.mjs'"],["'./learning-domain'", "'./learning.mjs'"]]);
@@ -214,7 +219,7 @@ globalThis.fetch = async (url, options = {}) => {
   if (u.includes("/rpc/consume_ai_budget")) return out(budget);
   if (u.includes("/chat/completions"))
     return ai
-      ? out({ choices: [{ message: { content: JSON.stringify(ai) } }] })
+      ? out({ choices: [{ message: { content: JSON.stringify(Array.isArray(ai)?ai.shift():ai) } }] })
       : out({ error: "unavailable" }, 503);
   if (u.includes("/classes")) return out([{ id: classId, teacher_id: user }]);
   if (u.includes("/nova_courses") || u.includes("/nova_publications")) {
@@ -400,3 +405,11 @@ test.after(async () => {
   Object.assign(process.env, env);
   await fs.rm(temp, { recursive: true, force: true });
 });
+
+const contentEngine=await mod("learning-content.mjs");
+test("student cannot generate or approve learning chapters",async()=>{reset();role="student";for(const action of ["content-outline","content-generate","content-approve"]){const r=await post({action,courseId:cid,version:course.version});assert.equal(r.status,403);}assert.ok(!requests.some(r=>r.url.includes("consume_ai_budget")));});
+test("chapter generation checks version before model budget",async()=>{reset();const r=await post({action:"content-generate",courseId:cid,version:-1,chapterId:"chapter-m1"});assert.equal(r.status,409);assert.ok(!requests.some(r=>r.url.includes("consume_ai_budget")));});
+test("chapter outline API preserves existing course data and persists JSONB extension",async()=>{reset();const r=await post({action:"content-outline",courseId:cid,version:course.version});assert.equal(r.status,200);const saved=await r.json();assert.equal(saved.data.chapters.length,course.data.modules.length);assert.deepEqual(saved.data.materials,course.data.materials);assert.equal(saved.version,course.version+1);});
+test("live content route performs draft and critique before one optimistic write",async()=>{reset();course.data.chapters=contentEngine.deriveChapters(course.data);const id=course.data.chapters[0].id;const template=await contentEngine.generateChapter(course.data,id);ai=[{blocks:template.blocks,quality:[]},{issues:[],notes:["Professor verifies the source interpretation."]}];const r=await post({action:"content-generate",courseId:cid,version:course.version,chapterId:id});assert.equal(r.status,200);const saved=await r.json();assert.equal(saved.data.chapters[0].generation.mode,"live");assert.equal(saved.data.chapters[0].status,"draft");assert.equal(requests.filter(r=>r.url.includes("/chat/completions")).length,2);assert.equal(requests.filter(r=>r.method==="PATCH").length,1);});
+test("content critic rejection preserves persisted course without partial write",async()=>{reset();course.data.chapters=contentEngine.deriveChapters(course.data);const id=course.data.chapters[0].id,template=await contentEngine.generateChapter(course.data,id);ai=[{blocks:template.blocks},{issues:["Unsupported claim"],notes:[]}];const r=await post({action:"content-generate",courseId:cid,version:course.version,chapterId:id});assert.equal(r.status,400);assert.match((await r.json()).error,/Unsupported claim/);assert.ok(!requests.some(r=>r.method==="PATCH"));});
+test("Socratic route enforces evidence ownership and locked submissions",async()=>{reset();role="student";demo.student_id="another-student";let r=await post({action:"socratic-next",id:did,version:demo.version});assert.equal(r.status,403);reset();role="student";demo.status="submitted";r=await post({action:"socratic-next",id:did,version:demo.version});assert.equal(r.status,400);assert.ok(!requests.some(r=>r.url.includes("/chat/completions")));});

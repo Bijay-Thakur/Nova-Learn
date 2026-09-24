@@ -7,7 +7,8 @@ import ts from "typescript";
 const temp=await fs.mkdtemp(path.join(process.cwd(),".nova-tests-adaptive-"));
 async function compile(file,name,replacements=[]){let source=await fs.readFile(file,"utf8");for(const [a,b]of replacements)source=source.replaceAll(a,b);await fs.writeFile(path.join(temp,name),ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText);}
 await compile("lib/novalearn/learning-domain.ts","learning.mjs");
-await compile("lib/novalearn/course-domain.ts","domain.mjs",[['"./learning-domain"','"./learning.mjs"']]);
+await compile("lib/novalearn/content-integrity.ts","content-integrity.mjs");
+await compile("lib/novalearn/course-domain.ts","domain.mjs",[['"./learning-domain"','"./learning.mjs"'],['"./content-integrity"','"./content-integrity.mjs"']]);
 await compile("lib/novalearn/course-sample.ts","sample.mjs",[['"./learning-domain"','"./learning.mjs"'],['"./course-domain"','"./domain.mjs"']]);
 await fs.writeFile(path.join(temp,"server.mjs"),`export async function identity(){if(!globalThis.testIdentity)throw new Error('Please sign in');return globalThis.testIdentity;} export function sameOrigin(req){if(req.headers.get('origin')!==new URL(req.url).origin)throw new Error('Cross-origin request rejected');} export async function sb(...args){return globalThis.testSB(...args);}`);
 await fs.writeFile(path.join(temp,"response.mjs"),"export const NextResponse={json:(d,o)=>Response.json(d,o)};");

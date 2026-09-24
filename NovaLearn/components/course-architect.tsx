@@ -820,7 +820,7 @@ export function ModuleStudio() {
         </div>
       </div>
       <aside>
-        <Nova text="Choose a module, review its notes, practice and worked examples, then edit and approve each asset. At the top, select a quick check and verify its answer key. Save your changes; they reach students only after a course release." />
+        <Nova text="Choose a module. At the top, derive its chapter outline from your approved blueprint, generate grounded content, then review the explanations, examples, questions and citations. Edit and approve the chapter; lock it when ready. Existing notes and quick checks remain below. Students receive approved work only after you publish a course version." />
         <Panel>
           <h3>Module objectives</h3>
           {c.data.objectives

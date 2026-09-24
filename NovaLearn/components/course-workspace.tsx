@@ -11,6 +11,7 @@ import {
 } from "@/lib/novalearn/course-domain";
 import { WorkspaceContext, Select, Empty, Badge } from "./course-ui";
 import { Architect, ModuleStudio, AssessmentStudio } from "./course-architect";
+import { ContentStudio } from "./learning-content";
 import { Learn, Demonstrate, StudentProgress } from "./course-student";
 import { ProfessorHome, EvidenceReview, ClassInsights } from "./course-review";
 import { LearningProvider } from "./learning-context";
@@ -346,7 +347,7 @@ export function CourseWorkspace({
               page === "architect" ? (
                 <CourseCompiler key={course.id}/>
               ) : page === "modules" ? (
-                <><QuickCheckStudio /><ModuleStudio /></>
+                <><ContentStudio /><QuickCheckStudio /><ModuleStudio /></>
               ) : page === "assessments" ? (
                 <AuthenticAssessmentStudio />
               ) : page === "evidence" ? (

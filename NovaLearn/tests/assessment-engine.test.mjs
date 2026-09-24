@@ -5,7 +5,7 @@ import path from "node:path";
 import ts from "typescript";
 import {pathToFileURL} from "node:url";
 const temp=await fs.mkdtemp(path.join(process.cwd(),".nova-tests-assessment-"));
-const names=["learning-domain","course-domain","course-sample","assessment-engine","course-compiler","evidence"];
+const names=["content-integrity","curriculum-audit","learning-domain","course-domain","course-sample","assessment-engine","course-compiler","evidence"];
 for(const name of names){let source=await fs.readFile(`lib/novalearn/${name}.ts`,"utf8");for(const dep of names)source=source.replaceAll(`"./${dep}"`,`"./${dep}.mjs"`);await fs.writeFile(path.join(temp,`${name}.mjs`),ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText);}
 const load=name=>import(pathToFileURL(path.join(temp,`${name}.mjs`)).href);
 const E=await load("assessment-engine"),D=await load("course-domain"),{sampleCourse}=await load("course-sample");

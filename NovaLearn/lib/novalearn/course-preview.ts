@@ -3,10 +3,14 @@ import { createAssessmentDesign, runAssessmentStage, resetAssessmentFrom, assess
 import { runCompilerJob, compilerIssues, nextCompilerJob, reviewFingerprint } from "./course-compiler";
 import { learningConfig, validateLearning } from "./learning-domain";
 import { saveAnswers } from "./evidence";
+import { deriveChapters, generateChapter, approveChapter, refreshChapterOutline } from "./learning-content";
+import { reconcileContent } from "./content-integrity";
+import { advanceDialogue } from "./socratic";
 import { previewData } from "./preview";
 import { sampleCourse, sampleDemonstrations } from "./course-sample";
 import {
   blankCourse,
+  courseDataSchema,
   chunkText,
   publishable,
   validateGraph,
@@ -85,9 +89,12 @@ export async function coursePreview(action: string, b: any = {}) {
     if (!c) throw new Error("Course not found");
     if (c.version !== b.version)
       throw new Error("This course changed. Reload before saving.");
-    reconcileAssessmentEdits(b.data,c.data);
+    b.data=courseDataSchema.parse(b.data);
     if (JSON.stringify([b.data.modules,b.data.objectives,b.data.learning?.concepts]) !== JSON.stringify([c.data.modules,c.data.objectives,c.data.learning?.concepts]) && !b.approveGraph) b.data.graphApproved=false;
     if (b.approveGraph) b.data.graphApproved = true;
+    b.data.sources=b.data.sources.map((source:Course["data"]["sources"][number])=>({...source,chunks:c.data.sources.find(old=>old.id===source.id&&old.text===source.text)?.chunks||chunkText(source.text,source.id)}));
+    reconcileContent(b.data,c.data);
+    reconcileAssessmentEdits(b.data,c.data);
     if (b.data.graphApproved) validateGraph(b.data);
     if (b.data.learning) validateLearning(b.data);
     if(b.data.compiler&&reviewFingerprint(b.data)!==reviewFingerprint(c.data))b.data.compiler.reviewed=false;
@@ -104,6 +111,14 @@ export async function coursePreview(action: string, b: any = {}) {
   if (action === "duplicate") {
     teacher(); if(!c)throw new Error("Course not found.");
     const row=structuredClone(c);row.id=id();row.class_id=null;row.title=`${c.title} · New semester`;row.version=1;row.data.revision=1;row.data.graphApproved=false;row.updated_at=now;row.data.audit=[{at:now,action:"Reused course template"}];if(row.data.learning)row.data.learning.releasedModuleIds=[];row.data.checkpoints.forEach(a=>a.published=false);s.courses.push(row);store(s);return row;
+  }
+  if(["content-outline","content-generate","content-approve","content-refresh"].includes(action)){
+    teacher();if(!c)throw new Error("Course not found.");if(c.version!==b.version)throw new Error("This course changed. Reload before saving.");
+    const data=structuredClone(c.data);
+    if(action==="content-outline")data.chapters=deriveChapters(data);
+    else {const ch=action==="content-approve"?approveChapter(data,b.chapterId):action==="content-refresh"?refreshChapterOutline(data,b.chapterId):await generateChapter(data,b.chapterId);data.chapters=data.chapters!.map(x=>x.id===ch.id?ch:x);}
+    reconcileAssessmentEdits(data,c.data);if(data.compiler)data.compiler.reviewed=false;
+    data.revision++;data.audit=[...data.audit.slice(-99),{at:now,action:`Learning content: ${action}`}];c.data=courseDataSchema.parse(data);c.version++;c.updated_at=now;store(s);return c;
   }
   if(["assessment-create","assessment-step","assessment-reset","assessment-approve"].includes(action)){
     teacher();if(!c)throw new Error("Course not found.");if(c.version!==b.version)throw new Error("This course changed. Reload before saving.");
@@ -237,6 +252,11 @@ export async function coursePreview(action: string, b: any = {}) {
     d.version++;
     store(s);
     return d;
+  }
+  if(action==="socratic-next"){
+    if(!d||d.student_id!==profile.id||profile.role!=="student")throw new Error("Action not permitted.");
+    if(d.version!==b.version)throw new Error("This submission changed. Reload before saving.");
+    const advanced=await advanceDialogue(d);advanced.version++;s.demonstrations=s.demonstrations.map(x=>x.id===d.id?advanced:x);store(s);return advanced;
   }
   if (action === "followups") {
     if (!d) throw new Error("Demonstration not found");

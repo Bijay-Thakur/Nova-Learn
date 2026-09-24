@@ -10,18 +10,20 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
     "build": "bash scripts/build-verified.sh",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run test:core && npm run test:course && npm run test:adaptive && npm run test:compiler && npm run test:assessment",
+    "test": "npm run test:core && npm run test:course && npm run test:adaptive && npm run test:compiler && npm run test:assessment && npm run test:connected",
     "test:assessment": "node --test tests/assessment-engine.test.mjs",
     "test:compiler": "node --test tests/course-compiler.test.mjs",
     "test:adaptive": "node --test tests/adaptive-learning.test.mjs",
-    "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern '.nova-tests-*'",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
     "dev:local": "next dev --hostname 127.0.0.1",
     "build:local": "next build",
     "start:local": "next start --hostname 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "test:core": "node --test tests/novalearn.test.mjs",
-    "test:course": "node --test tests/course-os.test.mjs"
+    "test:course": "node --test tests/course-os.test.mjs",
+    "test:connected": "node --test tests/connected-engines.test.mjs",
+    "test:ui": "node --test tests/ui-components.test.mjs tests/rendered-html.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

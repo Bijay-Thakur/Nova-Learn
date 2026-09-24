@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { learningConfigSchema, publicLearning, isReleased } from "./learning-domain";
+import { approvedChapter } from "./content-integrity";
 
 const id = z.string().min(1).max(100);
 export const compilerInputSchema = z.object({
+  courseTitle:z.string().min(3).max(200).optional(),
   code: z.string().trim().min(2).max(40),
   level: z.enum(["Introductory", "Intermediate", "Advanced", "Graduate"]),
   weeks: z.number().int().min(1).max(52),
@@ -14,6 +16,15 @@ export const compilerInputSchema = z.object({
   breakWeeks: z.array(z.number().int().min(1).max(52)).max(20),
   startDate: z.string().regex(/^$|^\d{4}-\d{2}-\d{2}$/),
   assessmentWeights: z.object({assignments:z.number().int().min(0).max(100),checkpoints:z.number().int().min(0).max(100),final:z.number().int().min(0).max(100)}),
+  description: z.string().max(4000).optional(),
+  targetLearners: z.string().max(2000).optional(),
+  meetingPattern: z.string().max(1000).optional(),
+  independentHoursPerWeek: z.number().min(0).max(80).optional(),
+  endDate: z.string().regex(/^$|^\d{4}-\d{2}-\d{2}$/).optional(),
+  explicitOutcomes: z.array(z.string().min(3).max(500)).max(15).optional(),
+  requiredTopics: z.array(z.string().min(2).max(120)).max(30).optional(),
+  optionalTopics: z.array(z.string().min(2).max(120)).max(30).optional(),
+  institutionalConstraints: z.string().max(4000).optional(),
 });
 export const compilerSchema = z.object({
   inputs: compilerInputSchema,
@@ -22,6 +33,7 @@ export const compilerSchema = z.object({
   schedule: z.array(z.object({moduleId:id,weeks:z.array(z.number().int()),hours:z.number(),checkpoint:z.boolean()})).max(30).default([]),
   log: z.array(z.object({key:z.string().max(150),status:z.enum(["complete","failed"]),at:z.string(),ms:z.number(),routing:z.string().max(200),detail:z.string().max(1000)})).max(80).default([]),
   reviewed: z.boolean().default(false),
+  analysis:z.object({at:z.string(),method:z.literal("lexical-and-structural-v1"),coverage:z.array(z.object({objectiveId:id,sourceIds:z.array(id),moduleIds:z.array(id)})),issues:z.array(z.string()),researchQuestions:z.array(z.object({id,question:z.string(),reason:z.string(),status:z.literal("proposed")})).max(5)}).optional(),
 });
 export const objectiveSchema = z.object({
   id,
@@ -37,6 +49,7 @@ export const moduleSchema = z.object({
   concepts: z.array(z.string().max(120)).max(20),
   objectiveIds: z.array(id).min(1).max(15),
   prerequisites: z.array(id).max(20),
+  sourceIds:z.array(id).max(20).optional(),
 });
 export const graphSchema = z.object({
   objectives: z.array(objectiveSchema).min(1).max(30),
@@ -68,6 +81,32 @@ export const materialSchema = z.object({
   sourceIds: z.array(id).max(20),
   approved: z.boolean(),
 });
+// Additive JSONB extension: old courses retain their plain-text materials.
+// All representations render these blocks; no parallel textbook/slide facts.
+export const contentBlockSchema = z.object({
+  id, topicId:id, subtopicId:id.optional(), objectiveIds:z.array(id).min(1).max(15),
+  kind:z.enum(["explanation","definition","worked-example","equation","code","diagram","image","table","callout","case-study","question","reference","deeper-reading"]),
+  title:z.string().min(2).max(200), text:z.string().min(1).max(6000),
+  sourceIds:z.array(id).max(10),
+  language:z.string().max(40).optional(), alt:z.string().max(1000).optional(),
+  rows:z.array(z.array(z.string().max(500)).max(10)).max(30).optional(),
+  nodes:z.array(z.object({id,label:z.string().max(150)})).max(20).optional(),
+  edges:z.array(z.object({from:id,to:id})).max(30).optional(),
+});
+export const chapterSchema = z.object({
+  id,moduleId:id,title:z.string().min(2).max(200),purpose:z.string().max(1000),
+  objectiveIds:z.array(id).min(1).max(15), prerequisiteModuleIds:z.array(id).max(20),
+  minutes:z.number().int().min(1).max(10000),depth:z.string().max(120),
+  topics:z.array(z.object({id,title:z.string().min(2).max(200),objectiveIds:z.array(id).min(1).max(15),subtopics:z.array(z.object({id,title:z.string().min(2).max(200)})).max(20)})).min(1).max(20),
+  blocks:z.array(contentBlockSchema).max(60),sourceIds:z.array(id).max(20),
+  status:z.enum(["outline","draft","approved","stale"]),locked:z.boolean().default(false),
+  contextFingerprint:z.string().max(100),approvedFingerprint:z.string().max(100).optional(),
+  version:z.number().int().min(1),updatedAt:z.string(),
+  generation:z.object({mode:z.enum(["live","demo","professor"]),provider:z.string().max(200),promptVersion:z.string().max(100),ms:z.number().min(0)}).optional(),
+  quality:z.array(z.string().max(1000)).max(20).optional(),
+});
+export type Chapter=z.infer<typeof chapterSchema>;
+export type ContentBlock=z.infer<typeof contentBlockSchema>;
 export const rubricSchema = z.object({
   objectiveId: id,
   criterion: z.string().min(3).max(500),
@@ -102,6 +141,7 @@ export const assessmentDesignSchema = z.object({
   validatedFingerprint:z.string().max(120000).optional(), approvedFingerprint:z.string().max(120000).optional(),
 });
 export const authenticPackageSchema = z.object({
+  curriculum:z.object({fingerprint:z.string().max(100),chapterIds:z.array(id).max(90),materialIds:z.array(id).max(80),sourceIds:z.array(id).max(20)}).optional(),
   designId:id, inputs:assessmentInputSchema, evidence:z.array(assessmentEvidenceSchema).min(1).max(8),
   strategy:z.object({rationale:z.string(),sequence:z.array(z.string()),accessibility:z.string()}),
   scenario:z.string(), tasks:assessmentTaskSchema.shape.tasks, sourceIds:z.array(id).max(5),
@@ -127,6 +167,7 @@ export const checkpointSchema = z.object({
   published: z.boolean().default(false),
 });
 export const courseDataSchema = z.object({
+  chapters:z.array(chapterSchema).max(90).optional(),
   assessmentDesigns:z.array(assessmentDesignSchema).max(40).optional(),
   compiler: compilerSchema.optional(),
   learning: learningConfigSchema.optional(),
@@ -202,6 +243,7 @@ export type Demonstration = {
     revision: number;
   };
   data: {
+    dialogue?: { status:"active"|"complete"; maxProbes:number; reason:string; mode:"live"|"demo"; turns:{questionId:string; uncertainty:string; evidenceIds?:string[]; objectiveIds?:string[]; at:string}[] };
     revisions?: {
       at: string;
       evidence: EvidenceItem[];
@@ -313,6 +355,13 @@ export function publishable(c: Course) {
   d.syllabus = "";
   d.sources = d.sources.filter((s) => s.approved && (!d.learning || (s.moduleIds?.length ? s.moduleIds.every(id => isReleased(d, id)) : d.modules.every(m => isReleased(d, m.id))))).map(s => ({...s, chunks: s.chunks.map(({vector, ...chunk}) => chunk)}));
   d.materials = d.materials.filter((m) => m.approved && isReleased(d, m.moduleId));
+  d.chapters = d.chapters?.filter(ch => approvedChapter(c.data,ch) && isReleased(d,ch.moduleId)).map(ch => ({...ch, quality:undefined, generation:undefined}));
+  // A chapter release exposes only its cited excerpts from otherwise private documents.
+  const cited=new Set(d.chapters?.flatMap(ch=>ch.blocks.flatMap(b=>b.sourceIds))||[]);
+  for(const source of c.data.sources.filter(s=>s.approved&&!d.sources.some(publicSource=>publicSource.id===s.id))){
+    const chunks=source.chunks.filter(c=>cited.has(c.id)).map(chunk=>({id:chunk.id,text:chunk.text,...(chunk.page===undefined?{}:{page:chunk.page})}));
+    if(chunks.length)d.sources.push({...source,text:chunks.map(c=>c.text).join("\n\n"),chunks,moduleIds:d.chapters!.filter(ch=>ch.sourceIds.some(id=>chunks.some(c=>c.id===id))).map(ch=>ch.moduleId)});
+  }
   d.checkpoints = d.checkpoints.filter((a) => a.published && isReleased(d, a.moduleId));
   if (c.data.learning) d.learning = publicLearning(c.data);
   return d;
@@ -396,6 +445,7 @@ export function validateEvaluation(
   return { ...e, source: "AI suggestion" };
 }
 export function canSubmit(d: Demonstration) {
+  if(d.data.dialogue?.status === "active") throw new Error("Complete the Socratic defense before submitting.");
   const evidence = d.data.evidence;
   if(d.snapshot.checkpoint.authentic?.inputs.verification==="Extended"&&!evidence.some(e=>e.kind==="reflection"&&e.answer.trim().length>=20))throw new Error("Complete the reflection required by this assessment.");
   if(d.snapshot.checkpoint.authentic&&!d.data.disclosure.trim())throw new Error("Disclose any assistance, or state that none was used.");

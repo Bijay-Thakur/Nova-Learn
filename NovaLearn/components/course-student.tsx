@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isReleased } from "@/lib/novalearn/learning-domain";
 import { VoiceInput } from "./voice-input";
+import { ContentReader } from "./learning-content";
 import {
   ArrowRight,
   BookOpen,
@@ -192,6 +193,7 @@ export function Learn() {
               )}
             </Panel>
           )}
+          <ContentReader/>
           {c.data.materials
             .filter((x) => x.moduleId === w.moduleId && x.approved)
             .map((x) => (
@@ -205,7 +207,7 @@ export function Learn() {
           {m &&
             !c.data.materials.some(
               (x) => x.moduleId === m.id && x.approved,
-            ) && (
+            ) && !c.data.chapters?.some(ch=>ch.moduleId===m.id&&ch.status==="approved") && (
               <Empty
                 title="Materials are being prepared"
                 text="Your professor has not released teaching materials for this module yet."
@@ -226,7 +228,7 @@ export function Learn() {
           </Panel>
         </div>
         <aside>
-          <Nova mode={recording ? "listening" : speaking ? "speaking" : w.busy ? "thinking" : "idle"} text="Start with your recommended concept check, read this module’s notes, and try the practice and applied example. Then teach me the idea in your own words. Use Demonstrate to submit your assignment and assessed Teach Nova explanation; this practice chat is not a grade." />
+          <Nova mode={recording ? "listening" : speaking ? "speaking" : w.busy ? "thinking" : "idle"} text="Start with your recommended concept check. Open the module’s chapters and choose a topic; Book gives the complete explanation, Study highlights examples and questions, and Slides groups the same material by topic. Read cited sources, try an application, then teach me the idea in your own words. Use Demonstrate to submit assessed evidence; this practice chat is not a grade." />
           {speaking && <button className="secondary" onClick={() => { playing.current?.pause(); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); setSpeaking(false); }}><Square size={15} /> Stop voice playback</button>}
           <Panel>
             <h3>Practice, not a grade</h3>
@@ -626,11 +628,13 @@ export function Demonstrate() {
                 >
                   <Sparkles size={16} /> Save & generate follow-ups
                 </button>
+                <button className="secondary" disabled={w.busy||!!locked} onClick={()=>w.run(async()=>{const saved=await save();const next=await w.call("socratic-next",{id:saved.id,version:saved.version});setCurrent(next);setStep(1);})}>Save & start Socratic defense</button>
               </>
             )}
             {step === 1 && (
               <>
                 <h2>Let’s examine the reasoning</h2>
+                <p className="fine">{demo.data.dialogue?`${demo.data.dialogue.mode} defense · ${demo.data.questions.length}/${demo.data.dialogue.maxProbes} probes · ${demo.data.dialogue.status}. ${demo.data.dialogue.reason}`:"You can keep the two-question follow-up or extend it into a bounded Socratic defense."}</p>
                 <p>
                   These questions probe claims and assumptions in your
                   explanation.
@@ -664,7 +668,7 @@ export function Demonstrate() {
                 )}
                 <button
                   className="primary"
-                  disabled={w.busy || !!locked || !demo.data.questions.length}
+                  disabled={w.busy || !!locked || !demo.data.questions.length || demo.data.dialogue?.status==="active"}
                   onClick={() =>
                     w.run(async () => {
                       await save();
@@ -674,6 +678,7 @@ export function Demonstrate() {
                 >
                   Save & continue <ArrowRight size={16} />
                 </button>
+                <button className="secondary" disabled={w.busy||!!locked||demo.data.dialogue?.status==="complete"} onClick={()=>w.run(async()=>{const saved=await save();const next=await w.call("socratic-next",{id:saved.id,version:saved.version});setCurrent(next);w.notice(next.data.dialogue.status==="complete"?"Defense evidence collected. Continue to transfer and reflection.":"A new probe is ready. Explain your reasoning before continuing.");})}>{demo.data.dialogue?"Save answer & continue defense":"Start Socratic defense"}</button>
               </>
             )}
             {step === 2 && (

@@ -8,13 +8,15 @@ The September 20 blueprint upgrade adds concept-level mastery estimates, diagnos
 
 The course compiler edit connects these existing features through six stages: professor inputs → AI blueprint → module generation → assessment design → review → finalize/export. Generation is resumable and never replaces existing authored content or publishes automatically. Nova explains each step, with optional device-voice narration. See **[Course compiler guide](docs/COURSE-COMPILER.md)**.
 
-Engine 2 now adds a saved Authentic Assessment design pipeline: objective evidence → strategy → applied scenario/tasks → rubric levels → variants/verification → alignment validation. Professor approval and course publication stay separate. Student packages exclude private evaluation guidance. See **[Authentic Assessment Engine](docs/AUTHENTIC-ASSESSMENT-ENGINE.md)** for the full workflow, model routing and limitations.
+The Authentic Assessment Engine adds a saved design pipeline: objective evidence → strategy → applied scenario/tasks → rubric levels → variants/verification → alignment validation. Professor approval and course publication stay separate. Student packages exclude private evaluation guidance. See **[Authentic Assessment Engine](docs/AUTHENTIC-ASSESSMENT-ENGINE.md)** for the full workflow, model routing and limitations.
+
+The connected-engine patch adds structured chapter/topic/content blocks, professor approval before downstream generation, a source-coverage/gap report, approved learning content in assessment context, and a bounded stateful Socratic defense. Existing materials and published versions stay usable. See **[Connected engines guide](docs/CONNECTED-ENGINES.md)**, **[Audit matrix](docs/ENGINE-AUDIT.md)** and **[validation results](docs/ENGINE-VALIDATION.md)** for real/demo boundaries and verification results. No additional database migration is required.
 
 ## Explore immediately
 
 Without Supabase credentials, the app opens in **Professor** preview with an example course. Switch between **Professor** and **Student** in the banner. Edit course graphs, create materials/checkpoints, release content, complete evidence bundles, review them, request revisions, and inspect class insights.
 
-Preview AI is scripted, not live assessment. Preview records stay in **this browser tab’s session storage**, are not shared, and may be cleared when the tab closes. Do not use preview for real student data. Live mode uses Supabase accounts and durable database storage. The **Download source** button delivers this runnable project.
+Preview AI is scripted, not live assessment. Preview records stay in **this browser tab’s session storage**, are not shared, and may be cleared when the tab closes. Do not use preview for real student data. Live mode uses Supabase accounts and durable database storage.
 
 ## Run in VS Code
 
@@ -60,7 +62,7 @@ Faculty verification, institution SSO, organization administration, and LMS inte
 1. **Classes & Students:** create a class and share its invitation code.
 2. **Course Compiler:** select an existing course or create one. Save course code, level, weeks, contact hours, module count, checkpoints, grading weights, prerequisites, outline and intent. Run each stage and review results. The original graph/source editor remains inside the blueprint stage.
 3. Add course sources, review the extracted text, and approve them. Text-based PDF, TXT, and Markdown are supported. Scanned PDFs require external OCR; the app reports missing text rather than pretending to read images.
-4. **Module Studio:** draft lecture notes, worked examples, practice, and discussions from approved sources, or write manually. Inspect citations, edit, and approve.
+4. **Module Studio:** derive chapters from the approved blueprint, generate grounded blocks, review/edit and approve. Book/Study/Slides reuse those blocks. The existing lecture notes, worked examples, practice and discussion editors remain available below.
 5. **Assessment Studio → Design engine:** select objectives and constraints, run six saved stages, edit the tasks/rubric/verification package, validate and approve. Release separately. **Existing assessments** retains the original manual editor.
 6. **Release approved content:** update the student course. Unapproved materials and unpublished checkpoints stay private. Removing content from a draft changes the student view only after another release.
 7. **Evidence Review:** inspect work, explanation, follow-ups, transfer, tool disclosure, and evidence trail. Confirm suggestions, record your own findings, or request more evidence. Students see professor feedback.
@@ -84,11 +86,11 @@ Save buttons persist drafts. Unsaved changes are labeled. Version checks prevent
 ## Student workflow
 
 - **My Classes:** join using the professor’s code.
-- **Learn:** read released materials and Teach Nova in text or voice using course-source citations. Practice chat is not assessment evidence and lasts only while that panel stays open.
+- **Learn:** navigate released chapters/topics in Book, Study or Slides mode, read legacy materials and Teach Nova in text or voice using course-source citations. Practice chat is not assessment evidence and lasts only while that panel stays open.
 - **Demonstrate:** provide a written artifact or import its text, explain the reasoning, disclose tools/help, answer adaptive follow-ups (type or transcribe speech), apply the idea to a changed scenario, and reflect on what changed. Save drafts and resume later. Extracted text is stored, not original binary uploads. Spoken answers are editable transcripts, not identity-verified oral exams.
 - **Progress:** see objective-linked findings, evidence confidence, professor feedback, and next steps.
 
-Submission locks evidence. A professor can reopen it by requesting a revision. Changing initial work resets its follow-ups. Requested-revision snapshots are retained in the exported bundle (up to ten). A provider outage does not block submission: the professor receives original evidence without fabricated AI findings.
+Submission locks evidence. A professor can reopen it by requesting a revision. Changing initial work resets its follow-ups. Optional Socratic defense stores sequential probes; editing an earlier answer removes dependent probes and reopens review. Requested-revision snapshots are retained in the exported bundle (up to ten). An evaluation-provider outage does not block an otherwise complete submission: the professor receives original evidence without fabricated AI findings.
 
 There is **no cheating score, authorship detector, hidden monitoring, or automatic final grade**. Low confidence means evidence needs verification—not dishonesty. Optional legacy learning labs remain available from Learn; their formative mission scores are separate from course findings.
 

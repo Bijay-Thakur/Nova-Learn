@@ -496,6 +496,7 @@ export function EvidenceReview() {
           </Panel>
           <Panel>
             <h3>Evidence trail</h3>
+            {d.data.dialogue&&<details><summary>Socratic defense · {d.data.dialogue.mode} · {d.data.dialogue.status}</summary><p>{d.data.dialogue.reason}</p>{d.data.dialogue.turns.map(t=><p key={t.questionId}><b>{t.questionId}</b>: {t.uncertainty}</p>)}<p className="fine">Probe reasons are suggestions, not established misconceptions or grades. Review the student’s actual responses above.</p></details>}
             {d.data.events.map((e, i) => (
               <div className="course-trail" key={i}>
                 <span />
