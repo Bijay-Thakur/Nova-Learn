@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import { ClayWorld } from "@/components/clay-world";
 import "./globals.css";
 import "./preview.css";
 import "./course.css";
 import "./learning.css";
 import "./compiler.css";
 import "./assessment.css";
+import "./clay.css";
 
 export const metadata: Metadata = {
   title: "NovaLearn · Understanding, evidenced",
@@ -22,7 +24,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <ClayWorld />
+        {children}
+      </body>
     </html>
   );
 }
