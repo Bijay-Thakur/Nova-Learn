@@ -10,6 +10,7 @@ import { compilerJobs, nextCompilerJob, defaultInputs, validateInputs, compilerI
 import { learningConfig } from "@/lib/novalearn/learning-domain";
 import { chunkText, type Course } from "@/lib/novalearn/course-domain";
 import { curriculumAudit } from "@/lib/novalearn/curriculum-audit";
+import { liveLabel, liveLlm } from "@/lib/novalearn/live-model";
 
 const steps=["Professor inputs","AI blueprint","Module generation","Assessment design","Review & refine","Finalize & export"];
 const guidance=[
@@ -69,7 +70,7 @@ export function CourseCompiler(){
   return <div className="compiler">
     <div className="compiler-heading"><div><span className="eyebrow">COURSE COMPILER</span><h2>{steps[step]}</h2><p>From your teaching intent to a reviewed, ready-to-release course.</p></div><Badge>Step {step+1} of 6</Badge></div>
     <nav className="compiler-stepper" aria-label="Course compiler stages">{steps.map((label,n)=><button key={label} aria-current={step===n?"step":undefined} disabled={running||w.busy||(n>0&&!c)} onClick={()=>setStep(n)}><span>{n+1}</span>{label}</button>)}</nav>
-    {w.preview&&<p className="compiler-preview-note">Explore mode uses labeled example templates, not live AI. Your preview edits last for this browser session. Live accounts save stages to Supabase.</p>}
+    {w.preview&&<p className="compiler-preview-note">{liveLlm()?`Course records stay in this browser tab. Generation calls ${liveLabel()}.`:"Explore mode uses labeled example templates, not live AI. Your preview edits last for this browser session. Live accounts save stages to Supabase."}</p>}
     <div className="compiler-layout"><fieldset className="compiler-main course-content-fieldset" disabled={running||w.busy}>
       {failure&&<div className="course-error" role="alert">{failure} Completed stages are safe. Fix the issue and resume.</div>}
       {step===0&&<Panel><h3>Tell Nova about your course</h3><fieldset disabled={running||w.busy} className="course-content-fieldset"><div className="course-form-grid">

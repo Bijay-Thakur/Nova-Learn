@@ -8,6 +8,7 @@ import { reconcileContent } from "./content-integrity";
 import { advanceDialogue } from "./socratic";
 import { evidenceLinks, evidenceTargets, evaluateStudentEvidence } from "./student-evidence";
 import { previewData } from "./preview";
+import { liveLabel, liveLlm, liveModel } from "./live-model";
 import { sampleCourse, sampleDemonstrations } from "./course-sample";
 import {
   blankCourse,
@@ -63,12 +64,19 @@ export async function coursePreview(action: string, b: any = {}) {
         profile.role === "teacher"
           ? s.demonstrations
           : s.demonstrations.filter((d) => d.student_id === profile.id),
-      routing: {
-        draft: "Example generator",
-        dialogue: "Scripted guide",
-        judge: "Example evidence synthesis",
-        retrieval: "Keyword retrieval (preview)",
-      },
+      routing: liveLlm()
+        ? {
+            draft: liveLabel(),
+            dialogue: liveLabel(),
+            judge: liveLabel(),
+            retrieval: "Keyword retrieval",
+          }
+        : {
+            draft: "Example generator",
+            dialogue: "Scripted guide",
+            judge: "Example evidence synthesis",
+            retrieval: "Keyword retrieval (preview)",
+          },
     };
   if (action === "create") {
     teacher();
@@ -117,14 +125,14 @@ export async function coursePreview(action: string, b: any = {}) {
     teacher();if(!c)throw new Error("Course not found.");if(c.version!==b.version)throw new Error("This course changed. Reload before saving.");
     const data=structuredClone(c.data);
     if(action==="content-outline")data.chapters=deriveChapters(data);
-    else {const ch=action==="content-approve"?approveChapter(data,b.chapterId):action==="content-refresh"?refreshChapterOutline(data,b.chapterId):await generateChapter(data,b.chapterId);data.chapters=data.chapters!.map(x=>x.id===ch.id?ch:x);}
+    else {const ask=liveLlm()?(system:string,input:unknown)=>liveModel(system,input,action==="content-generate"?"draft":"judge"):undefined;const ch=action==="content-approve"?approveChapter(data,b.chapterId):action==="content-refresh"?refreshChapterOutline(data,b.chapterId):await generateChapter(data,b.chapterId,ask,liveLlm()?(system:string,input:unknown)=>liveModel(system,input,"judge"):undefined);data.chapters=data.chapters!.map(x=>x.id===ch.id?ch:x);}
     reconcileAssessmentEdits(data,c.data);if(data.compiler)data.compiler.reviewed=false;
     data.revision++;data.audit=[...data.audit.slice(-99),{at:now,action:`Learning content: ${action}`}];c.data=courseDataSchema.parse(data);c.version++;c.updated_at=now;store(s);return c;
   }
   if(["assessment-create","assessment-step","assessment-reset","assessment-approve"].includes(action)){
     teacher();if(!c)throw new Error("Course not found.");if(c.version!==b.version)throw new Error("This course changed. Reload before saving.");
     if(action==="assessment-create")c.data.assessmentDesigns=[...(c.data.assessmentDesigns||[]),createAssessmentDesign(c.data,b.inputs,id(),id())];
-    else if(action==="assessment-step")c.data=await runAssessmentStage(c.data,b.designId,b.key);
+    else if(action==="assessment-step")c.data=await runAssessmentStage(c.data,b.designId,b.key,liveLlm()?(tier:"draft"|"judge",system:string,input:unknown)=>liveModel(system,input,tier):undefined);
     else if(action==="assessment-approve")c.data=approveAssessment(c.data,b.designId);
     else {const d=c.data.assessmentDesigns?.find(d=>d.id===b.designId),key=assessmentStages.find(s=>s.key===b.key)?.key;if(!d||!key)throw new Error("Assessment stage not found.");const reset=resetAssessmentFrom(d,key);if(key==="evidence")reset.contextFingerprint=assessmentContextFingerprint(c.data,reset.inputs);c.data.assessmentDesigns=c.data.assessmentDesigns!.map(x=>x.id===d.id?reset:x);c.data.checkpoints.forEach(cp=>{if(cp.id===d.checkpointId)cp.published=false;});}
     c.version++;c.data.revision++;c.updated_at=now;store(s);return c;
@@ -132,7 +140,7 @@ export async function coursePreview(action: string, b: any = {}) {
   if(action==="compiler-step"){
     teacher();if(!c)throw new Error("Course not found.");
     if(c.version!==b.version)throw new Error("This course changed. Reload before saving.");
-    c.data=await runCompilerJob(c.data,b.key);c.version++;c.updated_at=now;store(s);return c;
+    c.data=await runCompilerJob(c.data,b.key,liveLlm()?(system:string,input:unknown)=>liveModel(system,input,"draft"):undefined);c.version++;c.updated_at=now;store(s);return c;
   }
   if (action === "release") {
     teacher();
@@ -258,7 +266,7 @@ export async function coursePreview(action: string, b: any = {}) {
   if(action==="socratic-next"){
     if(!d||d.student_id!==profile.id||profile.role!=="student")throw new Error("Action not permitted.");
     if(d.version!==b.version)throw new Error("This submission changed. Reload before saving.");
-    const advanced=await advanceDialogue(d,undefined,evidenceTargets(d).filter(t=>t.type==="EXPLANATION"||t.type==="APPLICATION").map(t=>({id:t.id,objectiveId:t.objectiveId,expected:t.expected})));advanced.version++;s.demonstrations=s.demonstrations.map(x=>x.id===d.id?advanced:x);store(s);return advanced;
+    const advanced=await advanceDialogue(d,liveLlm()?(system:string,input:unknown)=>liveModel(system,input,"dialogue"):undefined,evidenceTargets(d).filter(t=>t.type==="EXPLANATION"||t.type==="APPLICATION").map(t=>({id:t.id,objectiveId:t.objectiveId,expected:t.expected})));advanced.version++;s.demonstrations=s.demonstrations.map(x=>x.id===d.id?advanced:x);store(s);return advanced;
   }
   if (action === "followups") {
     if (!d) throw new Error("Demonstration not found");
@@ -285,12 +293,12 @@ export async function coursePreview(action: string, b: any = {}) {
   if (action === "submit") {
     if (!d) throw new Error("Demonstration not found");
     canSubmit(d);
-    const analyzed=await evaluateStudentEvidence(d,undefined);
+    const analyzed=await evaluateStudentEvidence(d,undefined,liveLlm()?(tier:"draft"|"judge",system:string,input:unknown)=>liveModel(system,input,tier):undefined);
     d.data.evidenceEvents=[...(d.data.evidenceEvents||[]),...analyzed.events];
     d.data.evidenceBundle=analyzed.bundle;
     d.status = "submitted";
     d.data.review = null;
-    d.data.evaluation = {
+    d.data.evaluation = analyzed.evaluation || {
       source: "Example only",
       summary:
         "Preview evidence bundle. This demonstrates the review workflow; the content has not been assessed by a live model.",
@@ -338,19 +346,31 @@ export async function coursePreview(action: string, b: any = {}) {
     store(s);
     return d;
   }
-  if (action === "chat")
+  if (action === "chat") {
+    const citations =
+      c?.data.sources
+        .filter((s) => s.approved)
+        .flatMap((s) =>
+          s.chunks
+            .slice(0, 1)
+            .map((x) => ({ id: x.id, name: s.name, text: x.text })),
+        ) || [];
+    if (liveLlm()) {
+      const result = await liveModel(
+        "You are Nova, a curious university-level AI student. The human teaches you about the current course module. Ask one probing question. Use the supplied message and history. Do not reveal a full solution. Return {reply:string}.",
+        { message: b.message, history: b.history, moduleId: b.moduleId, courseId: b.courseId, sources: citations.map((x) => ({ id: x.id, name: x.name, text: x.text.slice(0, 500) })) },
+        "dialogue",
+      );
+      const reply = String((result.value as { reply?: string })?.reply || "").trim();
+      if (!reply) throw new Error("Nova returned an empty reply. Try again.");
+      return { reply, routing: result.routing, citations };
+    }
     return {
       reply:
         "Preview guide: explain the idea in your own words, connect it to the course source, then give a case where your explanation would fail. This response is scripted.",
-      citations:
-        c?.data.sources
-          .filter((s) => s.approved)
-          .flatMap((s) =>
-            s.chunks
-              .slice(0, 1)
-              .map((x) => ({ id: x.id, name: s.name, text: x.text })),
-          ) || [],
+      citations,
       routing: "Scripted preview",
     };
+  }
   throw new Error("Preview action unavailable.");
 }

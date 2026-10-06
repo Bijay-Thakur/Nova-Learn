@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { isReleased } from "@/lib/novalearn/learning-domain";
+import { liveLlm } from "@/lib/novalearn/live-model";
 import { VoiceInput } from "./voice-input";
 import { ContentReader } from "./learning-content";
 import {
@@ -259,7 +260,7 @@ export function Learn() {
             </div>
           </div>
           <Badge>
-            {w.preview ? "Scripted preview" : "Course-grounded practice"}
+            {w.preview && !liveLlm() ? "Scripted preview" : "Live Groq practice"}
           </Badge>
         </div>
         <div className="chat-log">

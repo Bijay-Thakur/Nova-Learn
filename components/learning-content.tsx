@@ -6,6 +6,7 @@ import { chapterSchema, type Chapter, type ContentBlock } from "@/lib/novalearn/
 import { contentIssues } from "@/lib/novalearn/learning-content";
 import { currentChapter } from "@/lib/novalearn/content-integrity";
 import { isReleased } from "@/lib/novalearn/learning-domain";
+import { liveLlm } from "@/lib/novalearn/live-model";
 
 function Block({block:b}:{block:ContentBlock}){
   return <section className="learning-block" aria-label={b.title}>
@@ -59,7 +60,7 @@ export function ContentStudio(){
   const w=useWorkspace(),d=w.course.data,chapters=(d.chapters||[]).filter(c=>c.moduleId===w.moduleId);
   const action=(name:string,id?:string)=>w.run(async()=>{const saved=await w.save();const updated=await w.call(name,{courseId:saved.id,version:saved.version,chapterId:id});w.setCourse(updated);w.notice(name==="content-approve"?"Chapter approved. Publish a course version to make it available to students.":"Structured learning content saved. Review it before approval.");});
   return <Panel><div className="section-title"><div><span className="eyebrow">LEARNING CONTENT ENGINE</span><h2>Teach the approved blueprint</h2><p>Chapters share your module IDs, outcomes and source references. Existing teaching materials remain below.</p></div><BookOpen/></div><ModuleSelect/>
-    <p className="fine">{w.preview?"Explore mode creates source extracts and practice templates, not a live AI textbook.":"Generate one grounded chapter at a time from approved sources. Each result remains a draft until you review it."}</p>
+    <p className="fine">{w.preview&&!liveLlm()?"Explore mode creates source extracts and practice templates, not a live AI textbook.":"Generate one grounded chapter at a time from approved sources. Each result remains a draft until you review it."}</p>
     <button className="secondary" disabled={w.busy||!d.graphApproved} onClick={()=>action("content-outline")}>Derive missing chapter outlines</button>{!d.graphApproved&&<p className="fine">Approve your course graph in the Course Compiler first.</p>}
     {chapters.map(ch=>{const issues=contentIssues(d,ch);return <details className="learning-chapter" key={ch.id} open={chapters.length===1}><summary>{ch.title} · <Badge>{currentChapter(d,ch)?ch.status:"stale"}</Badge>{ch.locked&&<Lock size={14}/>}</summary>
       {ch.generation&&<p className="fine">{ch.generation.mode} · {ch.generation.provider} · {ch.generation.promptVersion} · v{ch.version}</p>}

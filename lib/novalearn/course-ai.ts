@@ -11,7 +11,7 @@ export function routing(tier: Tier, preferred?: string) {
   const defaults: Record<string, string> = {
     openai: process.env.OPENAI_MODEL || "gpt-4o-mini",
     gemini: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-    groq: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+    groq: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
     local: process.env.LOCAL_LLM_MODEL || "llama3.1",
   };
   return {
